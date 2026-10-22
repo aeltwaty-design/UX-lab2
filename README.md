@@ -44,7 +44,7 @@ cp .env.example .env.local   # fill in VITE_SUPABASE_URL and VITE_SUPABASE_ANON_
 pnpm dev                     # http://localhost:5173
 ```
 
-**Hosted copy.** Every push to `main` publishes the dashboard to GitHub Pages at https://aeltwaty-design.github.io/UX-lab2/ (workflow `.github/workflows/pages.yml`; repository variables `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` feed the build). Add that URL to Supabase → Authentication → URL configuration → Site URL and Redirect URLs so the email link returns to the app. Any other static host works the same way: `pnpm build`, publish `dist/`.
+**Hosted copy.** Every push to `main` publishes the dashboard to GitHub Pages at https://aeltwaty-design.github.io/UX-lab2/ (workflow `.github/workflows/pages.yml`; the project URL and publishable key are written in the workflow, repository variables `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` override them). If the first run fails with a Pages error, turn on Settings → Pages → Source: GitHub Actions once. Add that URL to Supabase → Authentication → URL configuration → Site URL and Redirect URLs so the email link returns to the app. Any other static host works the same way: `pnpm build`, publish `dist/`.
 
 ### 3. Slack app
 
