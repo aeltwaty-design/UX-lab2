@@ -1,0 +1,28 @@
+{
+  "display_information": {
+    "name": "Research Desk",
+    "description": "Polls and surveys for #ux-research. Answers are linked to your profile.",
+    "background_color": "#06352a"
+  },
+  "features": {
+    "bot_user": { "display_name": "Research Desk", "always_online": true }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": ["chat:write", "chat:write.public", "im:write", "users:read", "channels:read", "groups:read", "channels:history", "pins:write"]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "request_url": "https://PROJECT_REF.supabase.co/functions/v1/slack-events",
+      "bot_events": ["member_joined_channel", "member_left_channel"]
+    },
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://PROJECT_REF.supabase.co/functions/v1/slack-interactions"
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}

@@ -1,0 +1,15 @@
+# Supabase CLI configuration (the parts that matter for this project).
+# `supabase link --project-ref <ref>` fills in the rest.
+project_id = "research-desk"
+
+[functions.slack-events]
+verify_jwt = false
+
+[functions.slack-interactions]
+verify_jwt = false
+
+[functions.publish-due]
+verify_jwt = false
+
+[functions.admin-actions]
+verify_jwt = true
