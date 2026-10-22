@@ -49,7 +49,7 @@ pnpm dev                     # http://localhost:5173
 ### 3. Slack app
 
 1. Go to api.slack.com/apps → Create new app → From a manifest → paste `supabase/slack-manifest.json` with `PROJECT_REF` replaced by your project ref (`lrqzizmxvgjgranooqnf`).
-2. Install the app to the workspace. Copy the **Bot User OAuth Token** (`xoxb-…`) and, from Basic information, the **Signing secret**.
+2. Install the app to the workspace. If the button reads **Request to Workspace Install**, a Slack admin has to approve the request first; after approval it becomes **Install to WalaPlus**. Copy the **Bot User OAuth Token** (`xoxb-…`) and, from Basic information, the **Signing secret**.
 3. Invite the bot to the channel: `/invite @Research Desk` in #ux-research.
 4. Copy the channel ID (channel details → bottom of the About tab) into Settings → Slack channel in the dashboard.
 
