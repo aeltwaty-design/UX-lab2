@@ -4,8 +4,16 @@
 import { db, getSettings } from "../_shared/db.ts";
 import { askForProfiles, closeStudy, publishStudy, remindStudy, syncMembers } from "../_shared/actions.ts";
 
+/** CRON_SECRET from the function secrets wins; otherwise the value migration 0002 generated in the database. */
+async function cronSecret(): Promise<string> {
+  const env = Deno.env.get("CRON_SECRET");
+  if (env) return env;
+  const { data } = await db.rpc("cron_secret");
+  return typeof data === "string" ? data : "";
+}
+
 Deno.serve(async (req) => {
-  const secret = Deno.env.get("CRON_SECRET") ?? "";
+  const secret = await cronSecret();
   if (!secret || req.headers.get("x-cron-secret") !== secret) return new Response("forbidden", { status: 403 });
 
   const now = new Date();

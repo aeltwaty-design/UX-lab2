@@ -26,7 +26,7 @@ Slack is the front door. This app is the back office. Colleagues never sign in t
 
 ### 1. Database
 
-The schema is already applied to the "UX Lab" project if you are reading this from the first pull request. Otherwise open the SQL editor and run `supabase/migrations/0001_init.sql`.
+The schema is already applied to the "UX Lab" project if you are reading this from the first pull request. Otherwise open the SQL editor and run `supabase/migrations/0001_init.sql`, then `0002_cron_secret.sql`.
 
 Add yourself as admin (SQL editor):
 
@@ -58,8 +58,10 @@ Deploy anywhere static (Vercel, Netlify, Cloudflare Pages): `pnpm build`, publis
 Set the secrets (Supabase dashboard → Edge Functions → Secrets, or the CLI):
 
 ```bash
-supabase secrets set SLACK_BOT_TOKEN=xoxb-... SLACK_SIGNING_SECRET=... CRON_SECRET=$(openssl rand -hex 24)
+supabase secrets set SLACK_BOT_TOKEN=xoxb-... SLACK_SIGNING_SECRET=...
 ```
+
+The scheduler secret needs no setting: migration `0002_cron_secret.sql` generates it inside the database and `publish-due` reads it from there. Set `CRON_SECRET` only if you want to override it.
 
 Deploy (CLI; `supabase/config.toml` already turns JWT verification off for the three Slack-facing functions):
 
@@ -72,7 +74,7 @@ Then in the Slack app settings, Event Subscriptions and Interactivity must show 
 
 ### 5. Scheduler
 
-Open `supabase/cron.sql`, replace `PROJECT_REF` and `CRON_SECRET`, run it in the SQL editor. From then on scheduled studies post themselves, live studies close on their close date, the day-before reminder goes out by DM, and the channel roster is refreshed hourly.
+Open `supabase/cron.sql`, replace `PROJECT_REF`, run it in the SQL editor (already done for the "UX Lab" project). From then on scheduled studies post themselves, live studies close on their close date, the day-before reminder goes out by DM, and the channel roster is refreshed hourly.
 
 ### 6. First post
 
