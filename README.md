@@ -44,7 +44,7 @@ cp .env.example .env.local   # fill in VITE_SUPABASE_URL and VITE_SUPABASE_ANON_
 pnpm dev                     # http://localhost:5173
 ```
 
-Deploy anywhere static (Vercel, Netlify, Cloudflare Pages): `pnpm build`, publish `dist/`. Add the deployed URL to Authentication → URL configuration → Redirect URLs so the email link returns to the app.
+**Hosted copy.** Every push to `main` publishes the dashboard to GitHub Pages at https://aeltwaty-design.github.io/UX-lab2/ (workflow `.github/workflows/pages.yml`; repository variables `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` feed the build). Add that URL to Supabase → Authentication → URL configuration → Site URL and Redirect URLs so the email link returns to the app. Any other static host works the same way: `pnpm build`, publish `dist/`.
 
 ### 3. Slack app
 

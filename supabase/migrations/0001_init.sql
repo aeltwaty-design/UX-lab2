@@ -159,7 +159,7 @@ create table if not exists friction_reports (
 );
 
 -- ---------- bookkeeping ----------
-create or replace function touch_updated_at() returns trigger language plpgsql as $$
+create or replace function touch_updated_at() returns trigger language plpgsql set search_path = public as $$
 begin new.updated_at = now(); return new; end $$;
 
 drop trigger if exists studies_touch on studies;
@@ -217,5 +217,7 @@ end $$;
 grant usage on schema public to authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
 grant select on study_stats, participant_stats to authenticated;
+revoke execute on function is_admin() from public, anon;
+revoke execute on function forget_participant(uuid) from public, anon;
 grant execute on function is_admin() to authenticated;
 grant execute on function forget_participant(uuid) to authenticated;
