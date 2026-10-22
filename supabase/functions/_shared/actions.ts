@@ -1,5 +1,5 @@
 // The operations behind every Slack-facing button, shared by the four functions.
-import { channelMemberIds, displayName, dm, listUsers, permalink, pin, postEphemeral, postMessage, sleep, updateMessage } from "./slack.ts";
+import { channelMemberIds, displayName, dm, listUsers, permalink, pin, postEphemeral, postMessage, slack, sleep, updateMessage } from "./slack.ts";
 import { countResponses, db, getSettings, getStudy, setSetting, snapshot, type Participant, type Settings, type Study } from "./db.ts";
 import { profilePromptBlocks, resultsBlocks, studyBlocks, totalsText } from "./blocks.ts";
 
@@ -98,9 +98,7 @@ export async function postResults(id: string): Promise<Outcome> {
   if (e2) throw e2;
   const rows = (responses ?? []) as { answers: { question_id: string; option_id: string | null; value_num: number | null }[] }[];
   const totals = post.include_totals ? totalsText(study, rows, settings.small_group) : null;
-  const r = await postMessage(channel, `Results: ${study.title_en}`, resultsBlocks(study, post.body_en, post.body_ar, totals, rows.length, settings.small_group), {
-    thread_ts: undefined,
-  });
+  const r = await postMessage(channel, `Results: ${study.title_en}`, resultsBlocks(study, post.body_en, post.body_ar, totals, rows.length, settings.small_group));
   const now = new Date().toISOString();
   const u1 = await db.from("results_posts").update({ posted_at: now, slack_ts: r.ts }).eq("study_id", id);
   if (u1.error) throw u1.error;
@@ -195,7 +193,7 @@ export async function repostProfile(): Promise<Outcome> {
 export async function testSlack(): Promise<Outcome> {
   const settings = await getSettings();
   try {
-    const r = await (await import("./slack.ts")).slack<{ team: string; user: string }>("auth.test", {});
+    const r = await slack<{ team: string; user: string }>("auth.test", {});
     const extra = settings.channel_id ? ` Channel ${settings.channel_id} set.` : " Channel ID not set yet.";
     return { ok: true, message: `Connected to ${r.team} as ${r.user}.${extra}` };
   } catch (e) {
