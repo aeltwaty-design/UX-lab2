@@ -65,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async sendMagicLink(email) {
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: window.location.origin },
+        options: { emailRedirectTo: window.location.origin + import.meta.env.BASE_URL },
       });
       return error ? error.message : null;
     },
