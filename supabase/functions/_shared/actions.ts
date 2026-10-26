@@ -160,7 +160,7 @@ export async function askForProfiles(settings: Settings, limit = 50): Promise<nu
   let sent = 0;
   for (const m of due.slice(0, limit)) {
     try {
-      await dm(m.slack_user_id, "Before your first answer in #ux-research, fill in a short profile.", profilePromptBlocks(settings));
+      await dm(m.slack_user_id, `Before your first answer in ${settings.channel_name}, fill in a short profile.`, profilePromptBlocks(settings));
       await db.from("channel_members").update({ profile_asked_at: new Date().toISOString() }).eq("slack_user_id", m.slack_user_id);
       sent++;
       await sleep(60);

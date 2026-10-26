@@ -31,7 +31,7 @@ Deno.serve(async (req) => {
         /* users:read missing */
       }
       await memberJoined(ev.user, name);
-      await dm(ev.user, "Welcome to #ux-research. Before your first answer, fill in a short profile.", profilePromptBlocks(settings));
+      await dm(ev.user, `Welcome to ${settings.channel_name}. Before your first answer, fill in a short profile.`, profilePromptBlocks(settings));
     } else if (ev?.type === "member_left_channel" && ev.user && ev.channel) {
       const settings = await getSettings();
       if (ev.channel === settings.channel_id) await memberLeft(ev.user);

@@ -58,7 +58,7 @@ function readProfile(values: Record<string, SurveyValues>) {
   const gender = v("gender")?.selected_option?.value;
   if (!gender) errors.gender = "Pick one.";
   const device = v("device")?.selected_option?.value;
-  if (!device) errors.device = "Pick your phone.";
+  if (!device) errors.device = "Pick your phone type.";
   if (Object.keys(errors).length) return { errors };
   return {
     row: {
@@ -146,7 +146,7 @@ Deno.serve(async (req) => {
           if (study.status === "live") return ok({ response_action: "update", view: surveyModal(study, meta.channel ?? "") });
         }
         await applyPending(p, pending, user);
-        if (!pending) await thank(meta.channel, user, "Profile saved. Thank you. Tap any poll or survey in #ux-research to answer.");
+        if (!pending) await thank(meta.channel, user, `Profile saved. Thank you. Tap any poll or survey in ${(await getSettings()).channel_name} to answer.`);
         return ok({ response_action: "clear" });
       }
 
