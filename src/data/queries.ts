@@ -207,7 +207,8 @@ export type AdminAction =
   | { action: "repost_profile" }
   | { action: "remind_missing_profiles" }
   | { action: "sync_members" }
-  | { action: "test_slack" };
+  | { action: "test_slack" }
+  | { action: "delete_post"; link: string };
 
 export interface AdminResult {
   ok: boolean;

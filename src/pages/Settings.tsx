@@ -15,6 +15,7 @@ export default function Settings() {
   const [s, setS] = useState<SettingsT | null>(null);
   const [admins, setAdmins] = useState<string[]>([]);
   const [newAdmin, setNewAdmin] = useState("");
+  const [postLink, setPostLink] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const fnBase = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
@@ -168,7 +169,28 @@ export default function Settings() {
                 Re-post the profile form
               </Button>
             </div>
-            <p className="text-[12px] text-muted mt-3">Members are synced every hour as well. Re-posting pins a fresh "fill in your profile" message in the channel.</p>
+            <p className="text-[12px] text-muted mt-3">Members are synced every hour as well. Re-posting replaces the pinned "fill in your profile" message in the channel.</p>
+          </Card>
+          <Card title="Delete a bot post">
+            <p className="text-[12.5px] text-muted mb-3">In Slack, open the message menu (More actions) and choose Copy link. Only the bot's own posts can be deleted.</p>
+            <div className="flex gap-2">
+              <Input placeholder="https://walaplus.slack.com/archives/C…/p…" value={postLink} onChange={(e) => setPostLink(e.target.value)} />
+              <Button
+                icon="trash"
+                disabled={!postLink.trim()}
+                loading={busy === "delete_post"}
+                onClick={() =>
+                  run("delete_post", async () => {
+                    const r = await runAdminAction({ action: "delete_post", link: postLink.trim() });
+                    if (!r.ok) throw new Error(r.message);
+                    setPostLink("");
+                    return r.message;
+                  })
+                }
+              >
+                Delete
+              </Button>
+            </div>
           </Card>
         </div>
       </div>

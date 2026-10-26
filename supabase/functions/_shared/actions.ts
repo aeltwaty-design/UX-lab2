@@ -1,5 +1,5 @@
 // The operations behind every Slack-facing button, shared by the four functions.
-import { channelMemberIds, deleteMessage, displayName, dm, listUsers, permalink, pin, postEphemeral, postMessage, slack, sleep, updateMessage } from "./slack.ts";
+import { channelMemberIds, deleteMessage, displayName, dm, listUsers, permalink, pin, postEphemeral, postMessage, slack, SlackError, sleep, updateMessage } from "./slack.ts";
 import { countResponses, db, getSettings, getStudy, setSetting, snapshot, type Participant, type Settings, type Study } from "./db.ts";
 import { profilePromptBlocks, resultsBlocks, studyBlocks, totalsText } from "./blocks.ts";
 
@@ -193,6 +193,33 @@ export async function repostProfile(): Promise<Outcome> {
   if (settings.profile_posts_old?.length) await setSetting("profile_posts_old", []);
   const note = removed ? ` Removed ${removed} older post${removed === 1 ? "" : "s"}.` : "";
   return { ok: true, message: `Profile form posted and pinned in ${settings.channel_name}.${note}` };
+}
+
+/** Deletes one of the bot's own posts, given a Slack message link (or a bare message ts in the channel). */
+export async function deletePost(link: string): Promise<Outcome> {
+  const settings = await getSettings();
+  const m = link.trim().match(/archives\/([A-Z0-9]+)\/p(\d{10})(\d{6})/i);
+  const channel = m ? m[1] : settings.channel_id;
+  const ts = m ? `${m[2]}.${m[3]}` : link.trim();
+  if (!channel || !/^\d{10}\.\d{6}$/.test(ts)) return { ok: false, message: "Paste the message link (in Slack: More actions, then Copy link)." };
+  try {
+    await slack("pins.remove", { channel, timestamp: ts });
+  } catch {
+    /* was not pinned */
+  }
+  try {
+    await slack("chat.delete", { channel, ts });
+  } catch (e) {
+    const code = e instanceof SlackError ? e.code : (e as Error).message;
+    const why: Record<string, string> = {
+      cant_delete_message: "the bot can only delete its own posts",
+      message_not_found: "no such post, maybe already deleted",
+      channel_not_found: "the bot is not in that channel",
+    };
+    return { ok: false, message: `Not deleted: ${why[code] ?? code}.` };
+  }
+  if (ts === settings.profile_post_ts) await setSetting("profile_post_ts", "");
+  return { ok: true, message: "Post deleted." };
 }
 
 export async function testSlack(): Promise<Outcome> {
