@@ -11,7 +11,7 @@ import { Spinner } from "@/components/ui/Empty";
 import { Icon } from "@/components/Icon";
 import { ConfirmDialog } from "@/components/ui/Dialog";
 import { useToast } from "@/components/ui/Toast";
-import { getSettings, getStudy, listBookings, runAdminAction, saveStudy, updatePublishedStudy, uploadStudyImage, type StudyDraft } from "@/data/queries";
+import { clearComparison, getSettings, getStudy, listBookings, runAdminAction, saveComparison, saveStudy, updatePublishedStudy, uploadStudyImage, type StudyDraft } from "@/data/queries";
 import { runChecks } from "@/lib/checks";
 import { fmtSlot, fromLocalInput, toLocalInput } from "@/lib/format";
 import type { SlotDraft } from "@/lib/preview";
@@ -84,6 +84,7 @@ function blankDraft(): StudyDraft {
     publish_at: publish.toISOString(),
     close_at: close.toISOString(),
     allow_changes: true,
+    compare_url: null,
   };
 }
 
@@ -190,6 +191,7 @@ export default function StudyBuilder() {
           publish_at: s.publish_at,
           close_at: s.close_at,
           allow_changes: s.allow_changes ?? true,
+          compare_url: s.compare_url ?? null,
         });
         setQuestions(s.questions.length ? s.questions : s.type === "session_recruitment" ? [] : [newQuestion(0)]);
         setSlots(s.slots.map((x) => ({ id: x.id, starts_at: x.starts_at, minutes: x.minutes, place: x.place, capacity: x.capacity })));
@@ -246,9 +248,29 @@ export default function StudyBuilder() {
     }
   }
 
+  /**
+   * Preference tests: rebuilds the side-by-side picture after every save, so the post shows the current images and
+   * labels. When it cannot be built, a draft falls back to one image per option; a posted study keeps its picture.
+   */
+  async function syncComparison(sid: string, d: StudyDraft): Promise<string | null> {
+    const opts = d.type === "preference_test" ? (questions[0]?.options ?? []).filter((o): o is Option & { image_url: string } => Boolean(o.image_url)) : [];
+    if (opts.length < 2) {
+      await clearComparison(sid, d.compare_url);
+      return null;
+    }
+    try {
+      return await saveComparison(sid, opts.map((o) => ({ image_url: o.image_url, label_en: o.label_en, label_ar: o.label_ar })), d.compare_url);
+    } catch (e) {
+      toast(`The side-by-side picture could not be built (${(e as Error).message}). ${locked ? "The post keeps the previous one." : "The images will be posted one under the other."}`, "error");
+      if (!locked) await clearComparison(sid, d.compare_url);
+      return locked ? d.compare_url : null;
+    }
+  }
+
   async function persist(status: StudyDraft["status"]): Promise<string> {
     const saved = await saveStudy({ ...draft!, status }, draft!.type === "session_recruitment" ? [] : questions, slots);
-    setDraft({ ...draft!, id: saved, status });
+    const compare_url = await syncComparison(saved, draft!);
+    setDraft({ ...draft!, id: saved, status, compare_url });
     return saved;
   }
 
@@ -305,6 +327,7 @@ export default function StudyBuilder() {
     act("save", async () => {
       if (hasErrors) throw new Error("Fix the errors in the checks panel first.");
       await updatePublishedStudy({ ...draft, id: draft.id! }, questions, slots);
+      await syncComparison(draft.id!, draft);
       const r = await runAdminAction({ action: "refresh_post", study_id: draft.id! });
       toast(r.message, r.ok ? "ok" : "error");
       nav(`/studies/${draft.id}`);
@@ -545,7 +568,7 @@ export default function StudyBuilder() {
                               </label>
                               <div className="space-y-1.5">
                                 <Input value={o.label_en} onChange={(e) => setOpt(qi, oi, { label_en: e.target.value })} placeholder={`Label, e.g. ${String.fromCharCode(65 + oi)}`} />
-                                <div className="text-[11.5px] text-muted">{locked ? "The image is fixed once posted; the label can change." : o.image_url ? "Shown under the image and on its button." : "Add the image first."}</div>
+                                <div className="text-[11.5px] text-muted">{locked ? "The image is fixed once posted; the label can change." : o.image_url ? "Shown above the image and on its button." : "Add the image first."}</div>
                               </div>
                               <Input className="ar self-start" value={o.label_ar} onChange={(e) => setOpt(qi, oi, { label_ar: e.target.value })} placeholder="التسمية" />
                               <button
@@ -565,7 +588,7 @@ export default function StudyBuilder() {
                             Add image
                           </Button>
                         )}
-                        <div className="text-[12px] text-muted">Two to six images. Members tap one button and can change their pick until the study closes. Keep every image the same size, or the post looks uneven.</div>
+                        <div className="text-[12px] text-muted">Two to six images, posted side by side in one picture and labelled A, B, C; each label also goes on its button. Keep every image the same size, or the picture looks uneven. Slack shows it small, and a click opens it full size.</div>
                       </div>
                     ) : (
                       (q.kind === "single" || q.kind === "multi") && (

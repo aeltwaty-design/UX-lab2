@@ -1,6 +1,7 @@
 import { clsx } from "clsx";
 import type { Question, SlotDraft, StudyDraftLike } from "@/lib/preview";
 import { fmtDate, fmtSlot } from "@/lib/format";
+import { compareColumns, LETTERS } from "@/lib/compare";
 
 /** A faithful-enough rendering of the Block Kit message the bot will post. */
 export function SlackPreview({
@@ -63,20 +64,29 @@ export function SlackPreview({
             <div className="mt-2.5">
               <div className="text-[13px] text-ink font-semibold">{q.text_en || "Which one do you prefer?"}</div>
               {q.text_ar && <div className="ar text-[13px] text-ink">{q.text_ar}</div>}
-              <div className="space-y-2 mt-2">
-                {images.map((o, i) => (
-                  <div key={o.id}>
-                    <div className="text-[12px] font-semibold text-ink-2 mb-1">{o.label_en || `Option ${i + 1}`}{o.label_ar ? ` · ${o.label_ar}` : ""}</div>
-                    <img src={o.image_url ?? ""} alt={o.label_en} className="max-h-40 rounded-sm border border-line-2 object-contain bg-fill" />
-                  </div>
-                ))}
-                {images.length === 0 && <div className="text-[12px] text-muted">Upload two to six images to see them here.</div>}
-              </div>
+              {images.length > 0 ? (
+                // One picture: the options side by side, each under a band with its letter and label.
+                <div className="mt-2 rounded-sm border border-line-2 bg-white p-2 grid gap-2" style={{ gridTemplateColumns: `repeat(${compareColumns(images.length)}, minmax(0, 1fr))` }}>
+                  {images.map((o, i) => (
+                    <div key={o.id} className="min-w-0">
+                      <div className="flex items-center gap-1.5 mb-1 min-w-0">
+                        <span className="h-4.5 w-4.5 rounded-full bg-brand text-brand-ink text-[10px] font-bold grid place-items-center shrink-0">{LETTERS[i]}</span>
+                        <span className="text-[11.5px] font-semibold text-ink truncate">{o.label_en || `Option ${i + 1}`}{o.label_ar ? ` · ${o.label_ar}` : ""}</span>
+                      </div>
+                      <div className="h-36 rounded-sm border border-line-2 bg-fill grid place-items-center overflow-hidden">
+                        <img src={o.image_url ?? ""} alt={o.label_en} className="max-h-full max-w-full object-contain" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-2 text-[12px] text-muted">Upload two to six images to see them side by side here.</div>
+              )}
               {images.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   {images.map((o, i) => (
                     <span key={o.id} className={clsx("h-7 px-2.5 inline-flex items-center rounded-sm border text-[12.5px] font-medium", closed ? "border-line text-muted bg-fill" : "border-line text-ink bg-white")}>
-                      {o.label_en || `Option ${i + 1}`}
+                      {LETTERS[i]} · {o.label_en || `Option ${i + 1}`}
                     </span>
                   ))}
                 </div>

@@ -56,6 +56,8 @@ export interface Study {
   reminder_sent_at: string | null;
   /** False: a member's first answer is final; later taps and submissions are refused. Not used by session recruitment. */
   allow_changes: boolean;
+  /** Preference tests: the side-by-side picture the dashboard built on the last save, in the study-images bucket. */
+  compare_url: string | null;
   created_at: string;
   updated_at: string;
   /** From the study_stats view. */

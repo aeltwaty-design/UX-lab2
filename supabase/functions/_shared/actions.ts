@@ -239,7 +239,7 @@ export async function deletePost(link: string): Promise<Outcome> {
 
 /**
  * Removes a draft, scheduled, closed or reported study with everything hanging off it (answers, bookings, slots,
- * results post row, preference images) and, when asked, the bot's posts for it in the channel.
+ * results post row, preference images and their side-by-side picture) and, when asked, the bot's posts for it in the channel.
  * A live study must be closed first; the database refuses the delete as well.
  */
 export async function deleteStudy(id: string, removePosts: boolean): Promise<Outcome> {
@@ -255,8 +255,7 @@ export async function deleteStudy(id: string, removePosts: boolean): Promise<Out
     if (resultsTs && settings.channel_id && (await deleteMessage(settings.channel_id, resultsTs))) removed++;
     notes.push(removed ? `${removed} post${removed === 1 ? "" : "s"} removed from ${settings.channel_name}` : "no posts to remove");
   }
-  const images = study.questions
-    .flatMap((q) => q.options.map((o) => o.image_url ?? ""))
+  const images = [...study.questions.flatMap((q) => q.options.map((o) => o.image_url ?? "")), study.compare_url ?? ""]
     .map((u) => u.split("/study-images/")[1] ?? "")
     .filter(Boolean);
   if (images.length) {

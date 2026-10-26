@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import type { SlotDraft } from "@/lib/preview";
+import { composeComparison, type CompareOption } from "@/lib/compare";
 import {
   DEFAULT_SETTINGS,
   type ChannelMember,
@@ -60,6 +61,8 @@ export interface StudyDraft {
   publish_at: string | null;
   close_at: string | null;
   allow_changes: boolean;
+  /** Preference tests: the side-by-side picture. saveComparison sets it after the save. */
+  compare_url: string | null;
 }
 
 /**
@@ -185,6 +188,36 @@ export async function uploadStudyImage(file: File): Promise<string> {
   const { error } = await supabase.storage.from("study-images").upload(path, file, { contentType: file.type, cacheControl: "31536000" });
   if (error) throw new Error(error.message);
   return supabase.storage.from("study-images").getPublicUrl(path).data.publicUrl;
+}
+
+/**
+ * Builds the side-by-side picture for a preference test, stores it in study-images and records it on the study.
+ * Every build gets a new file name, because Slack caches an image by its URL. Returns the new URL.
+ */
+export async function saveComparison(studyId: string, options: CompareOption[], previousUrl: string | null): Promise<string> {
+  const blob = await composeComparison(options);
+  const path = `compare/${studyId}-${Date.now()}.jpg`;
+  const up = await supabase.storage.from("study-images").upload(path, blob, { contentType: "image/jpeg", cacheControl: "31536000" });
+  if (up.error) throw new Error(up.error.message);
+  const url = supabase.storage.from("study-images").getPublicUrl(path).data.publicUrl;
+  const { error } = await supabase.from("studies").update({ compare_url: url }).eq("id", studyId);
+  if (error) fail(error);
+  await removeStudyImage(previousUrl);
+  return url;
+}
+
+/** Forgets the side-by-side picture: the study is no longer a preference test, or has fewer than two images. */
+export async function clearComparison(studyId: string, previousUrl: string | null): Promise<void> {
+  if (!previousUrl) return;
+  const { error } = await supabase.from("studies").update({ compare_url: null }).eq("id", studyId);
+  if (error) fail(error);
+  await removeStudyImage(previousUrl);
+}
+
+/** Best effort: a leftover file in the bucket is not worth failing a save over. */
+async function removeStudyImage(url: string | null): Promise<void> {
+  const path = url?.split("/study-images/")[1];
+  if (path) await supabase.storage.from("study-images").remove([path]);
 }
 
 // ---------- Session bookings ----------

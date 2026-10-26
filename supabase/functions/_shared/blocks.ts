@@ -1,8 +1,9 @@
 // Block Kit builders. Every message is bilingual: English line, Arabic line.
 import type { Block } from "./slack.ts";
-import { fmtDate, fmtSlot, smallGroup, type Participant, type Question, type Settings, type SlotWithBookings, type Study } from "./db.ts";
+import { fmtDate, fmtSlot, smallGroup, type Option, type Participant, type Question, type Settings, type SlotWithBookings, type Study } from "./db.ts";
 
 const AGE_BANDS = ["18-24", "25-34", "35-44", "45+"];
+const LETTERS = ["A", "B", "C", "D", "E", "F"];
 
 const bi = (en: string, ar: string) => (ar ? `${en}\n${ar}` : en);
 const pt = (text: string, emoji = true) => ({ type: "plain_text", text: text.slice(0, 75), emoji });
@@ -48,17 +49,19 @@ export function studyBlocks(study: Study, settings: Settings, closed = false, an
   } else if (study.type === "preference_test" && q) {
     blocks.push(md(`*${q.text_en}*${q.text_ar ? `\n${q.text_ar}` : ""}`));
     const opts = q.options.filter((o) => o.image_url).slice(0, 6);
-    for (const o of opts) {
-      const label = optionLabel(o.label_en, o.label_ar) || "Option";
-      blocks.push({ type: "image", image_url: o.image_url, alt_text: label, title: pt(label) });
-    }
+    // One picture with the options side by side, built by the dashboard on save. Without it, one image block each
+    // (Slack stacks them) and the buttons carry the labels alone.
+    const sheet = Boolean(study.compare_url);
+    const name = (o: Option, i: number) => `${sheet ? `${LETTERS[i]} · ` : ""}${optionLabel(o.label_en, o.label_ar) || `Option ${i + 1}`}`;
+    if (sheet) blocks.push({ type: "image", image_url: study.compare_url, alt_text: opts.map(name).join(", ").slice(0, 2000) });
+    else opts.forEach((o, i) => blocks.push({ type: "image", image_url: o.image_url, alt_text: name(o, i), title: pt(name(o, i)) }));
     if (!closed)
       blocks.push({
         type: "actions",
         block_id: `poll:${study.id}`,
-        elements: opts.map((o) => ({
+        elements: opts.map((o, i) => ({
           type: "button",
-          text: pt(optionLabel(o.label_en, o.label_ar) || "Pick"),
+          text: pt(name(o, i)),
           action_id: `poll:${study.id}:${o.id}`,
           value: o.id,
         })),

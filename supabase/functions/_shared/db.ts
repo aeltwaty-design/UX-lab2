@@ -60,6 +60,8 @@ export interface Study {
   reminder_sent_at: string | null;
   /** False: a member's first answer is final; later taps and submissions are refused. */
   allow_changes: boolean;
+  /** Preference tests: the side-by-side picture the dashboard built on the last save; null means one image block each. */
+  compare_url: string | null;
   questions: Question[];
 }
 

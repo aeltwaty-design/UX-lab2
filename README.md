@@ -28,7 +28,7 @@ Slack is the front door. This app is the back office. Colleagues never sign in t
 
 ### 1. Database
 
-The schema is already applied to the "UX Lab" project if you are reading this from the first pull request. Otherwise open the SQL editor and run the files in `supabase/migrations/` in order, `0001` to `0004`.
+The schema is already applied to the "UX Lab" project if you are reading this from the first pull request. Otherwise open the SQL editor and run the files in `supabase/migrations/` in order, `0001` to `0006`.
 
 Add yourself as admin (SQL editor):
 
@@ -96,8 +96,8 @@ Design tokens live in `src/styles/globals.css` (`@theme`). Colours, radii and sh
 
 Three more things colleagues can do from Slack, all behind the same profile gate:
 
-- **Preference test.** The builder takes two to six images (uploaded to the public `study-images` bucket) with a short label each. The post shows the images and one button per image; a tap is a poll answer, so it can be changed until the study closes. Results show each image with its share.
+- **Preference test.** The builder takes two to six images (uploaded to the public `study-images` bucket) with a short label each. On save the dashboard draws them side by side in one picture (`src/lib/compare.ts`, a canvas; labelled A, B, C), stores it in the same bucket and records it as `studies.compare_url`; the post shows that picture and one button per image (`A · label`). Without the picture the bot falls back to one image block per option, which Slack stacks. A tap is a poll answer. Results show each image with its share.
 - **Session recruitment.** The builder takes slots (start, length, place or link, seats). The post lists the slots, strikes through full ones and offers a picker; a booking confirms by DM with a cancel button, counts against the weekly hours cap, and gets a reminder DM the day before. Moving to another slot cancels the first one. Tables `session_slots` and `session_bookings`.
 - **Friction inbox.** `/friction` anywhere in Slack, or the pinned "Report a broken step" button (Friction inbox → Post the prompt), opens a form: app, what you tried, what happened, optional screenshot. The screenshot is copied into the private `friction` bucket (the Slack link is kept as a fallback). The inbox shows each report with the sender's profile; you set the status (new, fixed, duplicate, by design), keep a private note and reply by DM. Every Sunday at 09:00 Riyadh the bot posts a digest to the channel (received, fixed, open); "Send digest now" posts it on demand.
 
-Migration `supabase/migrations/0003_version_two.sql` adds the columns, tables, view change, buckets and policies. The Slack manifest gained the `commands` and `files:read` scopes and the slash command, so an existing app needs its manifest updated and a reinstall. `0004_delete_guard.sql` adds the trigger that refuses to delete a live study. `0005_answer_changes.sql` adds `studies.allow_changes` and lists the view columns explicitly.
+Migration `supabase/migrations/0003_version_two.sql` adds the columns, tables, view change, buckets and policies. The Slack manifest gained the `commands` and `files:read` scopes and the slash command, so an existing app needs its manifest updated and a reinstall. `0004_delete_guard.sql` adds the trigger that refuses to delete a live study. `0005_answer_changes.sql` adds `studies.allow_changes` and lists the view columns explicitly. `0006_compare_sheet.sql` adds `studies.compare_url`.
