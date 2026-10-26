@@ -18,6 +18,18 @@ export function fmtDateTime(iso: string | null | undefined): string {
   return DATE_TIME.format(new Date(iso));
 }
 
+const RIYADH = "Asia/Riyadh";
+const SLOT_DAY = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: RIYADH });
+const SLOT_TIME = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: RIYADH });
+
+/** "Sun 2 Nov · 10:00–10:30" in Riyadh time, the same words the bot posts. */
+export function fmtSlot(startsAt: string, minutes: number): string {
+  const start = new Date(startsAt);
+  if (Number.isNaN(start.getTime())) return "—";
+  const end = new Date(start.getTime() + minutes * 60_000);
+  return `${SLOT_DAY.format(start)} · ${SLOT_TIME.format(start)}–${SLOT_TIME.format(end)}`;
+}
+
 /** Value for an <input type="datetime-local"> from an ISO string, in local time. */
 export function toLocalInput(iso: string | null | undefined): string {
   if (!iso) return "";

@@ -48,7 +48,7 @@ export default function Studies() {
       closedMonth: all.filter((s) => s.closed_at && new Date(s.closed_at).getTime() > monthAgo).length,
       answersMonth: all
         .filter((s) => s.published_at && new Date(s.published_at).getTime() > monthAgo)
-        .reduce((n, s) => n + s.response_count, 0),
+        .reduce((n, s) => n + s.response_count + s.booking_count, 0),
     };
   }, [rows]);
 
@@ -58,7 +58,7 @@ export default function Studies() {
     <>
       <PageHeader
         title="Studies"
-        sub="Every poll and survey the channel has seen, with its answers and results post."
+        sub="Every poll, survey, preference test and session round the channel has seen, with its answers and results post."
         actions={<Button variant="primary" icon="plus" onClick={() => nav("/studies/new")}>New study</Button>}
       />
       <div className="px-7 pb-8 space-y-4">
@@ -66,7 +66,7 @@ export default function Studies() {
           <StatTile label="Live now" value={stats.live} tone="brand" sub="collecting answers" />
           <StatTile label="Scheduled" value={stats.scheduled} tone="one" sub="post themselves on time" />
           <StatTile label="Closed, last 30 days" value={stats.closedMonth} sub="awaiting or carrying a results post" />
-          <StatTile label="Answers, last 30 days" value={stats.answersMonth} sub="across studies published in the period" />
+          <StatTile label="Answers, last 30 days" value={stats.answersMonth} sub="answers and bookings, studies published in the period" />
         </div>
 
         <div className="flex items-center gap-1.5">
@@ -122,7 +122,7 @@ export default function Studies() {
                   {fmtDate(s.publish_at ?? s.published_at)} → {fmtDate(s.close_at ?? s.closed_at)}
                 </div>
                 <div className="text-[13px] text-ink text-right tabular-nums">
-                  {s.response_count}
+                  {s.type === "session_recruitment" ? s.booking_count : s.response_count}
                   {s.target ? <span className="text-muted"> / {s.target}</span> : null}
                 </div>
                 <div>

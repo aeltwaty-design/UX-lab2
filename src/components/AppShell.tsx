@@ -1,20 +1,27 @@
 import { clsx } from "clsx";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
+import { getSettings } from "@/data/queries";
+import { DEFAULT_SETTINGS } from "@/lib/types";
 import { Icon, type IconName } from "./Icon";
-import { Chip } from "./ui/Chip";
 
-const NAV: { to: string; label: string; icon: IconName; v2?: boolean }[] = [
+const NAV: { to: string; label: string; icon: IconName }[] = [
   { to: "/studies", label: "Studies", icon: "studies" },
   { to: "/participants", label: "Participants", icon: "users" },
-  { to: "/friction", label: "Friction inbox", icon: "inbox", v2: true },
+  { to: "/friction", label: "Friction inbox", icon: "inbox" },
   { to: "/settings", label: "Settings", icon: "settings" },
 ];
 
 export function AppShell() {
   const { session, signOut } = useAuth();
   const email = session?.user.email ?? "";
+  const [channel, setChannel] = useState(DEFAULT_SETTINGS.channel_name);
+  useEffect(() => {
+    getSettings()
+      .then((s) => s.channel_name && setChannel(s.channel_name))
+      .catch(() => {});
+  }, []);
   return (
     <div className="min-h-screen grid grid-cols-[232px_minmax(0,1fr)]">
       <aside className="bg-white border-r border-line flex flex-col sticky top-0 h-screen">
@@ -25,7 +32,7 @@ export function AppShell() {
             </span>
             <div className="leading-tight">
               <div className="text-[13.5px] font-semibold text-ink">Research Desk</div>
-              <div className="text-[11.5px] text-muted">#ux-research back office</div>
+              <div className="text-[11.5px] text-muted truncate">{channel} back office</div>
             </div>
           </div>
         </div>
@@ -43,7 +50,6 @@ export function AppShell() {
             >
               <Icon name={n.icon} size={16} />
               <span className="flex-1">{n.label}</span>
-              {n.v2 && <Chip tone="v2">v2</Chip>}
             </NavLink>
           ))}
         </nav>

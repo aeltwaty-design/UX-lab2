@@ -1,6 +1,6 @@
 // Block Kit builders. Every message is bilingual: English line, Arabic line.
 import type { Block } from "./slack.ts";
-import { fmtDate, smallGroup, type Participant, type Question, type Settings, type Study } from "./db.ts";
+import { fmtDate, fmtSlot, smallGroup, type Participant, type Question, type Settings, type SlotWithBookings, type Study } from "./db.ts";
 
 const AGE_BANDS = ["18-24", "25-34", "35-44", "45+"];
 
@@ -13,8 +13,20 @@ function optionLabel(en: string, ar: string): string {
   return ar ? `${en} · ${ar}` : en;
 }
 
-/** The channel post for a poll or survey. `closed` swaps the buttons for a closing line. */
-export function studyBlocks(study: Study, settings: Settings, closed = false, answered = 0): Block[] {
+const select = (block_id: string, label: string, options: { value: string; text: string }[], initial?: string) => ({
+  type: "input",
+  block_id,
+  label: pt(label),
+  element: {
+    type: "static_select",
+    action_id: "v",
+    options: options.map((o) => ({ text: pt(o.text), value: o.value })),
+    ...(initial ? { initial_option: { text: pt(options.find((o) => o.value === initial)?.text ?? initial), value: initial } } : {}),
+  },
+});
+
+/** The channel post for any study type. `closed` swaps the controls for a closing line. `slots` only matter for session recruitment. */
+export function studyBlocks(study: Study, settings: Settings, closed = false, answered = 0, slots: SlotWithBookings[] = []): Block[] {
   const blocks: Block[] = [{ type: "header", text: pt(study.title_en || "Study", true) }];
   const intro = [study.title_ar, study.intro_en, study.intro_ar].filter(Boolean).join("\n");
   if (intro) blocks.push(md(intro));
@@ -33,6 +45,45 @@ export function studyBlocks(study: Study, settings: Settings, closed = false, an
           value: o.id,
         })),
       });
+  } else if (study.type === "preference_test" && q) {
+    blocks.push(md(`*${q.text_en}*${q.text_ar ? `\n${q.text_ar}` : ""}`));
+    const opts = q.options.filter((o) => o.image_url).slice(0, 6);
+    for (const o of opts) {
+      const label = optionLabel(o.label_en, o.label_ar) || "Option";
+      blocks.push({ type: "image", image_url: o.image_url, alt_text: label, title: pt(label) });
+    }
+    if (!closed)
+      blocks.push({
+        type: "actions",
+        block_id: `poll:${study.id}`,
+        elements: opts.map((o) => ({
+          type: "button",
+          text: pt(optionLabel(o.label_en, o.label_ar) || "Pick"),
+          action_id: `poll:${study.id}:${o.id}`,
+          value: o.id,
+        })),
+      });
+  } else if (study.type === "session_recruitment") {
+    const lines = slots.map((s) => {
+      const full = s.booked >= s.capacity;
+      const line = `${fmtSlot(s.starts_at, s.minutes)}${s.place ? ` · ${s.place}` : ""} · ${full ? "full" : `${s.capacity - s.booked} of ${s.capacity} free`}`;
+      return full ? `~${line}~` : line;
+    });
+    if (lines.length) blocks.push(md(lines.join("\n")));
+    const open = slots.filter((s) => s.booked < s.capacity && new Date(s.starts_at).getTime() > Date.now());
+    if (!closed && open.length)
+      blocks.push({
+        type: "section",
+        block_id: `session:${study.id}`,
+        text: { type: "mrkdwn", text: "*Pick a time · اختر وقتاً*\nOne slot each. You get a DM with the details and a cancel button." },
+        accessory: {
+          type: "static_select",
+          action_id: `session:pick:${study.id}`,
+          placeholder: pt("Choose a slot"),
+          options: open.slice(0, 100).map((s) => ({ text: pt(fmtSlot(s.starts_at, s.minutes)), value: s.id })),
+        },
+      });
+    else if (!closed) blocks.push(md("All sessions are booked. Thank you · اكتملت الحجوزات، شكراً لكم"));
   } else if (!closed) {
     blocks.push({
       type: "actions",
@@ -44,10 +95,11 @@ export function studyBlocks(study: Study, settings: Settings, closed = false, an
     blocks.push(ctx(`${study.questions.length} question${study.questions.length === 1 ? "" : "s"} · under 10 minutes`));
   }
 
+  const sessions = study.type === "session_recruitment";
   blocks.push(
     closed
-      ? ctx(`Closed · ${smallGroup(answered, settings.small_group)} answered · results come back here. Thank you.\nأُغلقت الدراسة. شكراً لكل من أجاب.`)
-      : ctx(`Closes ${fmtDate(study.close_at)} · answers are linked to your profile · results come back in this channel\nتُغلق ${fmtDate(study.close_at)} · إجاباتك مرتبطة بملفك · النتائج تعود هنا`),
+      ? ctx(`Closed · ${smallGroup(answered, settings.small_group)} ${sessions ? "booked" : "answered"} · results come back here. Thank you.\nأُغلقت الدراسة. شكراً لكل من شارك.`)
+      : ctx(`Closes ${fmtDate(study.close_at)} · ${sessions ? "bookings" : "answers"} are linked to your profile · results come back in this channel\nتُغلق ${fmtDate(study.close_at)} · مشاركتك مرتبطة بملفك · النتائج تعود هنا`),
   );
   return blocks;
 }
@@ -69,23 +121,12 @@ export function profilePromptBlocks(settings: Settings): Block[] {
 }
 
 export interface Pending {
-  kind: "poll" | "survey";
+  kind: "poll" | "survey" | "friction" | "session";
   study_id: string;
   option_id?: string;
+  slot_id?: string;
   channel?: string;
 }
-
-const select = (block_id: string, label: string, options: { value: string; text: string }[], initial?: string) => ({
-  type: "input",
-  block_id,
-  label: pt(label),
-  element: {
-    type: "static_select",
-    action_id: "v",
-    options: options.map((o) => ({ text: pt(o.text), value: o.value })),
-    ...(initial ? { initial_option: { text: pt(options.find((o) => o.value === initial)?.text ?? initial), value: initial } } : {}),
-  },
-});
 
 export function profileModal(settings: Settings, prefillName: string, existing: Participant | null, pending: Pending | null, channel: string): Block {
   const teams = settings.teams.length ? settings.teams : ["Other"];
@@ -127,6 +168,102 @@ export function profileModal(settings: Settings, prefillName: string, existing: 
       select("language", "Language · اللغة", [{ value: "en", text: "English" }, { value: "ar", text: "العربية" }], existing?.language ?? settings.default_lang),
     ],
   };
+}
+
+/** The /friction form. `withFile` adds the screenshot field, which Slack only accepts when the app has files:read. */
+export function frictionModal(channel: string, withFile: boolean): Block {
+  return {
+    type: "modal",
+    callback_id: "friction",
+    private_metadata: JSON.stringify({ channel }),
+    title: pt("Report a broken step"),
+    submit: pt("Send · إرسال"),
+    close: pt("Cancel"),
+    blocks: [
+      md(bi("One minute. Say what you tried and what happened; the research team replies by DM.", "دقيقة واحدة. اذكر ما حاولت فعله وما الذي حدث؛ يرد فريق البحث برسالة خاصة.")),
+      select("app", "App · التطبيق", [{ value: "walaplus", text: "WalaPlus" }, { value: "walaone", text: "WalaOne" }]),
+      {
+        type: "input",
+        block_id: "tried",
+        label: pt("What did you try to do? · ماذا حاولت أن تفعل؟"),
+        element: { type: "plain_text_input", action_id: "v", max_length: 300, placeholder: pt("e.g. redeem the Jarir offer") },
+      },
+      {
+        type: "input",
+        block_id: "happened",
+        label: pt("What happened instead? · ماذا حدث؟"),
+        element: { type: "plain_text_input", action_id: "v", multiline: true, max_length: 1000 },
+      },
+      ...(withFile
+        ? [{
+          type: "input",
+          block_id: "shot",
+          optional: true,
+          label: pt("Screenshot · لقطة شاشة"),
+          element: { type: "file_input", action_id: "v", filetypes: ["png", "jpg", "jpeg", "gif", "webp", "heic"], max_files: 1 },
+        }]
+        : []),
+      ctx("Never include a PIN, OTP, card number or password."),
+    ],
+  };
+}
+
+/** The pinned channel post that invites friction reports. */
+export function frictionPromptBlocks(): Block[] {
+  return [
+    md(bi(
+      "*Something broken in WalaPlus or WalaOne?* Report it in one minute: what you tried, what happened, a screenshot if you have one. The research team replies by DM.",
+      "*هل تعطّلت خطوة في ولاء بلس أو ولاء ون؟* أبلغ عنها في دقيقة: ما حاولت فعله، وما الذي حدث، ولقطة شاشة إن وُجدت. يرد فريق البحث برسالة خاصة.",
+    )),
+    {
+      type: "actions",
+      block_id: "friction",
+      elements: [{ type: "button", style: "primary", text: pt("Report a broken step · أبلغ عن خطوة"), action_id: "friction:open", value: "open" }],
+    },
+    ctx("Or type /friction anywhere in Slack. Never include a PIN, OTP, card number or password."),
+  ];
+}
+
+export interface DigestStats { received: number; fixed: number; open: number; walaplus: number; walaone: number }
+
+/** The weekly friction digest for the channel. */
+export function frictionDigestBlocks(s: DigestStats, settings: Settings): Block[] {
+  return [
+    { type: "header", text: pt("Friction this week · احتكاك هذا الأسبوع") },
+    md(
+      `*${s.received}* reported this week (WalaPlus ${s.walaplus}, WalaOne ${s.walaone}) · *${s.fixed}* fixed · *${s.open}* still open.\n` +
+        `*${s.received}* بلاغاً هذا الأسبوع · *${s.fixed}* أُصلح · *${s.open}* ما زال مفتوحاً.`,
+    ),
+    {
+      type: "actions",
+      block_id: "friction",
+      elements: [{ type: "button", text: pt("Report a broken step · أبلغ عن خطوة"), action_id: "friction:open", value: "open" }],
+    },
+    ctx(`Every report gets a reply by DM from the research team in ${settings.channel_name}.`),
+  ];
+}
+
+/** The DM that confirms a session booking, with its cancel button. */
+export function sessionBookedBlocks(study: Study, slot: SlotWithBookings, bookingId: string, moved: boolean): Block[] {
+  const when = `${fmtSlot(slot.starts_at, slot.minutes)}${slot.place ? ` · ${slot.place}` : ""}`;
+  return [
+    md(bi(
+      `*${moved ? "Moved" : "Booked"}: ${study.title_en}*\n${when}\n${slot.minutes} minutes. We remind you the day before.`,
+      `*${moved ? "تم نقل الحجز" : "تم الحجز"}: ${study.title_ar || study.title_en}*\n${slot.minutes} دقيقة. نذكّرك قبل الموعد بيوم.`,
+    )),
+    {
+      type: "actions",
+      block_id: `booking:${bookingId}`,
+      elements: [{
+        type: "button",
+        style: "danger",
+        text: pt("Cancel this booking · إلغاء الحجز"),
+        action_id: `session:cancel:${bookingId}`,
+        value: bookingId,
+        confirm: { title: pt("Cancel the booking?"), text: { type: "mrkdwn", text: "The slot goes back to the channel." }, confirm: pt("Cancel it"), deny: pt("Keep it") },
+      }],
+    },
+  ];
 }
 
 function questionInput(q: Question): Block {

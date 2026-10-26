@@ -1,8 +1,9 @@
 // Scheduler, called by pg_cron every five minutes with the x-cron-secret header.
 // Publishes scheduled studies, closes live ones at their close date, sends the day-before reminder,
-// keeps asking for missing profiles, and refreshes the channel roster once an hour.
+// keeps asking for missing profiles, refreshes the channel roster once an hour, reminds booked sessions a day ahead
+// and posts the weekly friction digest on Sunday morning.
 import { db, getSettings } from "../_shared/db.ts";
-import { askForProfiles, closeStudy, publishStudy, remindStudy, syncMembers } from "../_shared/actions.ts";
+import { askForProfiles, closeStudy, frictionDigestIfDue, publishStudy, remindStudy, sessionReminders, syncMembers } from "../_shared/actions.ts";
 
 /** CRON_SECRET from the function secrets wins; otherwise the value migration 0002 generated in the database. */
 async function cronSecret(): Promise<string> {
@@ -50,6 +51,9 @@ Deno.serve(async (req) => {
 
     const lastSync = settings.members_synced_at ? new Date(settings.members_synced_at).getTime() : 0;
     if (now.getTime() - lastSync > 3600_000) await attempt("sync", syncMembers);
+
+    await attempt("session reminders", sessionReminders);
+    await attempt("friction digest", () => frictionDigestIfDue(settings));
 
     const { count } = await db.from("studies").select("id", { count: "exact", head: true }).eq("status", "live");
     if ((count ?? 0) > 0) {

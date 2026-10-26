@@ -18,6 +18,12 @@ export interface Settings {
   profile_post_ts?: string;
   /** Older profile posts still to be removed on the next re-post. */
   profile_posts_old?: string[];
+  /** The pinned "report a broken step" post. */
+  friction_post_ts?: string;
+  /** When the weekly friction digest last went out. */
+  friction_digest_at?: string;
+  /** True once Slack accepted the friction form with its screenshot field (needs files:read). */
+  friction_files_ok?: boolean;
 }
 
 export async function getSettings(): Promise<Settings> {
@@ -33,7 +39,7 @@ export async function setSetting(key: string, value: unknown) {
   if (error) throw error;
 }
 
-export interface Option { id: string; position: number; label_en: string; label_ar: string }
+export interface Option { id: string; position: number; label_en: string; label_ar: string; image_url: string | null }
 export interface Question { id: string; position: number; kind: "single" | "multi" | "scale" | "yesno" | "text"; text_en: string; text_ar: string; required: boolean; options: Option[] }
 export interface Study {
   id: string;
@@ -64,6 +70,48 @@ export async function getStudy(id: string): Promise<Study> {
     .map((q) => ({ ...q, options: (q.options ?? []).sort((a, b) => a.position - b.position) }));
   return s;
 }
+
+// ---------- session recruitment ----------
+
+export interface SessionSlot { id: string; study_id: string; position: number; starts_at: string; minutes: number; place: string; capacity: number }
+export interface SlotWithBookings extends SessionSlot { booked: number }
+
+/** The study's slots in time order, each with its count of active bookings. */
+export async function getSlots(studyId: string): Promise<SlotWithBookings[]> {
+  const { data, error } = await db.from("session_slots").select("*, session_bookings(id, cancelled_at)").eq("study_id", studyId).order("starts_at");
+  if (error) throw error;
+  return ((data ?? []) as (SessionSlot & { session_bookings?: { id: string; cancelled_at: string | null }[] })[]).map((s) => {
+    const { session_bookings, ...slot } = s;
+    return { ...slot, booked: (session_bookings ?? []).filter((b) => !b.cancelled_at).length };
+  });
+}
+
+const RIYADH = "Asia/Riyadh";
+const DAY = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: RIYADH });
+const TIME = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: RIYADH });
+
+/** "Sun 2 Nov · 10:00–10:30", Riyadh time. */
+export function fmtSlot(startsAt: string, minutes: number): string {
+  const start = new Date(startsAt);
+  const end = new Date(start.getTime() + minutes * 60_000);
+  return `${DAY.format(start)} · ${TIME.format(start)}–${TIME.format(end)}`;
+}
+
+/** Riyadh calendar parts of an instant. weekday: 0 = Sunday. */
+export function riyadh(d: Date): { y: number; m: number; d: number; weekday: number; hour: number } {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: RIYADH, year: "numeric", month: "numeric", day: "numeric", hour: "numeric", hour12: false, weekday: "short" }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(get("weekday"));
+  return { y: Number(get("year")), m: Number(get("month")), d: Number(get("day")), weekday, hour: Number(get("hour")) % 24 };
+}
+
+/** The Sunday that starts the Riyadh week an instant falls in, as YYYY-MM-DD. Saudi weeks start on Sunday. */
+export function weekKey(iso: string): string {
+  const r = riyadh(new Date(iso));
+  return new Date(Date.UTC(r.y, r.m - 1, r.d - r.weekday)).toISOString().slice(0, 10);
+}
+
+// ---------- participants ----------
 
 export interface Participant {
   id: string;

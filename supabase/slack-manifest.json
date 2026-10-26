@@ -1,15 +1,24 @@
 {
   "display_information": {
-    "name": "Research Desk",
-    "description": "Polls and surveys for #ux-research. Answers are linked to your profile.",
+    "name": "Researcher الباحث",
+    "description": "Polls, surveys, preference tests, session bookings and /friction reports for #ux-lab. Answers are linked to your profile.",
     "background_color": "#06352a"
   },
   "features": {
-    "bot_user": { "display_name": "Research Desk", "always_online": true }
+    "bot_user": { "display_name": "Researcher الباحث", "always_online": true },
+    "slash_commands": [
+      {
+        "command": "/friction",
+        "url": "https://PROJECT_REF.supabase.co/functions/v1/slack-interactions",
+        "description": "Report a broken step in WalaPlus or WalaOne",
+        "usage_hint": "opens a one-minute form",
+        "should_escape": false
+      }
+    ]
   },
   "oauth_config": {
     "scopes": {
-      "bot": ["chat:write", "chat:write.public", "im:write", "users:read", "channels:read", "groups:read", "channels:history", "pins:write"]
+      "bot": ["chat:write", "chat:write.public", "im:write", "users:read", "channels:read", "groups:read", "channels:history", "pins:write", "commands", "files:read"]
     }
   },
   "settings": {

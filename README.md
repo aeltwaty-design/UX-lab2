@@ -48,9 +48,9 @@ pnpm dev                     # http://localhost:5173
 
 ### 3. Slack app
 
-1. Go to api.slack.com/apps → Create new app → From a manifest → paste `supabase/slack-manifest.json` with `PROJECT_REF` replaced by your project ref (`lrqzizmxvgjgranooqnf`).
+1. Go to api.slack.com/apps → Create new app → From a manifest → paste `supabase/slack-manifest.json` with `PROJECT_REF` replaced by your project ref (`lrqzizmxvgjgranooqnf`). For an app that already exists, open it → Features → App Manifest, paste the same JSON, save, then reinstall from Install App (the `commands` and `files:read` scopes and the `/friction` command need the reinstall).
 2. Install the app to the workspace. If the button reads **Request to Workspace Install**, a Slack admin has to approve the request first; after approval it becomes **Install to WalaPlus**. Copy the **Bot User OAuth Token** (`xoxb-…`) and, from Basic information, the **Signing secret**.
-3. Invite the bot to the channel: `/invite @Research Desk` in #ux-research.
+3. Invite the bot to the channel: `/invite @research_desk` in the channel (the handle stays `research_desk` whatever the display name is).
 4. Copy the channel ID (channel details → bottom of the About tab) into Settings → Slack channel in the dashboard.
 
 ### 4. Edge functions
@@ -90,6 +90,12 @@ deno check supabase/functions/*/index.ts   # edge functions (needs Deno 2)
 
 Design tokens live in `src/styles/globals.css` (`@theme`). Colours, radii and shadows follow the WalaPlus Data Dashboards taste: Poppins, IBM Plex Sans Arabic, brand green `#00ce8b` on ink `#06352a`, WalaOne purple `#755bd8`. Icons are inline SVG in `src/components/Icon.tsx`; no icon package.
 
-## Version two (tables already exist, pages are placeholders)
+## Version two (live)
 
-Preference tests, session recruitment and the friction inbox. See `src/pages/Friction.tsx` for what each adds.
+Three more things colleagues can do from Slack, all behind the same profile gate:
+
+- **Preference test.** The builder takes two to six images (uploaded to the public `study-images` bucket) with a short label each. The post shows the images and one button per image; a tap is a poll answer, so it can be changed until the study closes. Results show each image with its share.
+- **Session recruitment.** The builder takes slots (start, length, place or link, seats). The post lists the slots, strikes through full ones and offers a picker; a booking confirms by DM with a cancel button, counts against the weekly hours cap, and gets a reminder DM the day before. Moving to another slot cancels the first one. Tables `session_slots` and `session_bookings`.
+- **Friction inbox.** `/friction` anywhere in Slack, or the pinned "Report a broken step" button (Friction inbox → Post the prompt), opens a form: app, what you tried, what happened, optional screenshot. The screenshot is copied into the private `friction` bucket (the Slack link is kept as a fallback). The inbox shows each report with the sender's profile; you set the status (new, fixed, duplicate, by design), keep a private note and reply by DM. Every Sunday at 09:00 Riyadh the bot posts a digest to the channel (received, fixed, open); "Send digest now" posts it on demand.
+
+Migration `supabase/migrations/0003_version_two.sql` adds the columns, tables, view change, buckets and policies. The Slack manifest gained the `commands` and `files:read` scopes and the slash command, so an existing app needs its manifest updated and a reinstall.

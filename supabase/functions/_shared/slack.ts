@@ -141,3 +141,11 @@ export function displayName(u: SlackUser): string {
 }
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Downloads a Slack-hosted file with the bot token (needs files:read). Without the scope Slack answers with a login page. */
+export async function downloadFile(url: string): Promise<{ bytes: Uint8Array; type: string }> {
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${TOKEN}` } });
+  const type = (res.headers.get("content-type") ?? "application/octet-stream").split(";")[0]!.trim();
+  if (!res.ok || type.includes("text/html")) throw new Error(`file download refused (${res.status}, ${type})`);
+  return { bytes: new Uint8Array(await res.arrayBuffer()), type };
+}

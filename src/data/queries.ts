@@ -1,11 +1,15 @@
 import { supabase } from "@/lib/supabase";
+import type { SlotDraft } from "@/lib/preview";
 import {
   DEFAULT_SETTINGS,
   type ChannelMember,
+  type FrictionReport,
   type Participant,
   type Question,
   type Response,
   type ResultsPost,
+  type SessionBooking,
+  type SessionSlot,
   type Settings,
   type Study,
   type StudyWithQuestions,
@@ -29,14 +33,16 @@ export async function listStudies(): Promise<Study[]> {
 export async function getStudy(id: string): Promise<StudyWithQuestions> {
   const { data, error } = await supabase
     .from("study_stats")
-    .select("*, questions(*, options(*))")
+    .select("*, questions(*, options(*)), session_slots(*)")
     .eq("id", id)
     .single();
   if (error) fail(error);
-  const s = data as StudyWithQuestions;
+  const row = data as StudyWithQuestions & { session_slots?: SessionSlot[] };
+  const { session_slots, ...s } = row;
   s.questions = (s.questions ?? [])
     .sort((a, b) => a.position - b.position)
     .map((q) => ({ ...q, options: (q.options ?? []).sort((a, b) => a.position - b.position) }));
+  s.slots = (session_slots ?? []).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
   return s;
 }
 
@@ -55,8 +61,11 @@ export interface StudyDraft {
   close_at: string | null;
 }
 
-/** Upserts the study row and replaces its questions and options. Returns the id. */
-export async function saveStudy(draft: StudyDraft, questions: Question[]): Promise<string> {
+/**
+ * Upserts the study row and replaces its questions, options and session slots. Returns the id.
+ * Only drafts and scheduled studies are saved this way, so no answers or bookings hang off the rows replaced here.
+ */
+export async function saveStudy(draft: StudyDraft, questions: Question[], slots: SlotDraft[] = []): Promise<string> {
   const row = { ...draft };
   if (!row.id) delete row.id;
   const { data, error } = await supabase.from("studies").upsert(row).select("id").single();
@@ -65,6 +74,19 @@ export async function saveStudy(draft: StudyDraft, questions: Question[]): Promi
 
   const del = await supabase.from("questions").delete().eq("study_id", id);
   if (del.error) fail(del.error);
+  const delSlots = await supabase.from("session_slots").delete().eq("study_id", id);
+  if (delSlots.error) fail(delSlots.error);
+
+  if (draft.type === "session_recruitment") {
+    const rows = [...slots]
+      .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+      .map((s, i) => ({ study_id: id, position: i, starts_at: s.starts_at, minutes: s.minutes, place: s.place.trim(), capacity: s.capacity }));
+    if (rows.length) {
+      const ins = await supabase.from("session_slots").insert(rows);
+      if (ins.error) fail(ins.error);
+    }
+    return id;
+  }
 
   for (const [qi, q] of questions.entries()) {
     const qr = await supabase
@@ -81,17 +103,44 @@ export async function saveStudy(draft: StudyDraft, questions: Question[]): Promi
       .single();
     if (qr.error) fail(qr.error);
     const qid = (qr.data as { id: string }).id;
-    const opts = ["single", "multi"].includes(q.kind)
-      ? q.options.filter((o) => o.label_en.trim())
-      : [];
+    const opts =
+      draft.type === "preference_test"
+        ? q.options.filter((o) => o.image_url)
+        : ["single", "multi"].includes(q.kind)
+          ? q.options.filter((o) => o.label_en.trim())
+          : [];
     if (opts.length) {
       const or = await supabase.from("options").insert(
-        opts.map((o, oi) => ({ question_id: qid, position: oi, label_en: o.label_en, label_ar: o.label_ar })),
+        opts.map((o, oi) => ({ question_id: qid, position: oi, label_en: o.label_en, label_ar: o.label_ar, image_url: o.image_url ?? null })),
       );
       if (or.error) fail(or.error);
     }
   }
   return id;
+}
+
+/** Uploads a preference-test image to the public study-images bucket and returns its URL. */
+export async function uploadStudyImage(file: File): Promise<string> {
+  if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type)) throw new Error("Use a PNG, JPEG, GIF or WebP image.");
+  if (file.size > 5 * 1024 * 1024) throw new Error("Images are limited to 5 MB.");
+  const ext = file.type.split("/")[1] === "jpeg" ? "jpg" : file.type.split("/")[1];
+  const path = `${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabase.storage.from("study-images").upload(path, file, { contentType: file.type, cacheControl: "31536000" });
+  if (error) throw new Error(error.message);
+  return supabase.storage.from("study-images").getPublicUrl(path).data.publicUrl;
+}
+
+// ---------- Session bookings ----------
+
+export async function listBookings(studyId: string): Promise<SessionBooking[]> {
+  const { data, error } = await supabase
+    .from("session_bookings")
+    .select("*, participant:participants(slack_user_id, name, deleted_at)")
+    .eq("study_id", studyId)
+    .is("cancelled_at", null)
+    .order("booked_at", { ascending: false });
+  if (error) fail(error);
+  return (data ?? []) as SessionBooking[];
 }
 
 export async function deleteStudy(id: string): Promise<void> {
@@ -165,6 +214,26 @@ export async function saveResultsPost(p: Pick<ResultsPost, "study_id" | "body_en
   return data as ResultsPost;
 }
 
+// ---------- Friction inbox ----------
+
+export async function listFriction(): Promise<FrictionReport[]> {
+  const { data, error } = await supabase.from("friction_reports").select("*").order("created_at", { ascending: false });
+  if (error) fail(error);
+  return (data ?? []) as FrictionReport[];
+}
+
+export async function updateFriction(id: string, patch: Partial<Pick<FrictionReport, "status" | "note" | "resolved_at">>): Promise<void> {
+  const { error } = await supabase.from("friction_reports").update(patch).eq("id", id);
+  if (error) fail(error);
+}
+
+/** A one-hour link to a screenshot in the private friction bucket. */
+export async function frictionScreenshotUrl(path: string): Promise<string> {
+  const { data, error } = await supabase.storage.from("friction").createSignedUrl(path, 3600);
+  if (error) throw new Error(error.message);
+  return data.signedUrl;
+}
+
 // ---------- Settings ----------
 
 export async function getSettings(): Promise<Settings> {
@@ -208,7 +277,11 @@ export type AdminAction =
   | { action: "remind_missing_profiles" }
   | { action: "sync_members" }
   | { action: "test_slack" }
-  | { action: "delete_post"; link: string };
+  | { action: "delete_post"; link: string }
+  | { action: "post_friction_prompt" }
+  | { action: "friction_digest" }
+  | { action: "session_reminders" }
+  | { action: "dm_participant"; participant_id: string; text: string };
 
 export interface AdminResult {
   ok: boolean;

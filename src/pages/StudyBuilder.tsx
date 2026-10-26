@@ -10,9 +10,10 @@ import { Input, Label, Select, Textarea, Toggle } from "@/components/ui/Field";
 import { Spinner } from "@/components/ui/Empty";
 import { Icon } from "@/components/Icon";
 import { useToast } from "@/components/ui/Toast";
-import { deleteStudy, getSettings, getStudy, runAdminAction, saveStudy, type StudyDraft } from "@/data/queries";
+import { deleteStudy, getSettings, getStudy, runAdminAction, saveStudy, uploadStudyImage, type StudyDraft } from "@/data/queries";
 import { runChecks } from "@/lib/checks";
-import { fromLocalInput, toLocalInput } from "@/lib/format";
+import { fmtSlot, fromLocalInput, toLocalInput } from "@/lib/format";
+import type { SlotDraft } from "@/lib/preview";
 import {
   DEFAULT_SETTINGS,
   QUESTION_KINDS,
@@ -29,7 +30,7 @@ let seq = 0;
 const tmpId = () => `tmp-${++seq}`;
 
 function newOption(question_id: string, position: number): Option {
-  return { id: tmpId(), question_id, position, label_en: "", label_ar: "" };
+  return { id: tmpId(), question_id, position, label_en: "", label_ar: "", image_url: null };
 }
 
 function newQuestion(position: number, kind: QuestionKind = "single"): Question {
@@ -44,6 +45,22 @@ function newQuestion(position: number, kind: QuestionKind = "single"): Question 
     required: true,
     options: kind === "single" || kind === "multi" ? [newOption(id, 0), newOption(id, 1)] : [],
   };
+}
+
+const MINUTES = [15, 20, 30, 45, 60, 90];
+
+/** The next slot follows the previous one with a short gap; the first one lands the day after publishing at 10:00. */
+function nextSlot(slots: SlotDraft[], publishAt: string | null): SlotDraft {
+  const last = slots[slots.length - 1];
+  if (last) {
+    const start = new Date(new Date(last.starts_at).getTime() + (last.minutes + 15) * 60_000);
+    return { id: tmpId(), starts_at: start.toISOString(), minutes: last.minutes, place: last.place, capacity: last.capacity };
+  }
+  const start = publishAt ? new Date(publishAt) : new Date();
+  start.setDate(start.getDate() + 1);
+  start.setHours(10, 0, 0, 0);
+  if (start.getTime() < Date.now()) start.setTime(Date.now() + 86_400_000);
+  return { id: tmpId(), starts_at: start.toISOString(), minutes: 30, place: "", capacity: 1 };
 }
 
 function blankDraft(): StudyDraft {
@@ -67,7 +84,7 @@ function blankDraft(): StudyDraft {
   };
 }
 
-const TEMPLATES: { label: string; apply: (d: StudyDraft) => { draft: StudyDraft; questions: Question[] } }[] = [
+const TEMPLATES: { label: string; apply: (d: StudyDraft) => { draft: StudyDraft; questions: Question[]; slots?: SlotDraft[] } }[] = [
   {
     label: "Weekly pulse poll",
     apply: (d) => {
@@ -102,6 +119,34 @@ const TEMPLATES: { label: string; apply: (d: StudyDraft) => { draft: StudyDraft;
       };
     },
   },
+  {
+    label: "Two screens, pick one",
+    apply: (d) => {
+      const q = newQuestion(0, "single");
+      q.text_en = "Which home screen is clearer?";
+      q.text_ar = "أي شاشة رئيسية أوضح؟";
+      q.options = [
+        { ...newOption(q.id, 0), label_en: "A", label_ar: "أ" },
+        { ...newOption(q.id, 1), label_en: "B", label_ar: "ب" },
+      ];
+      return {
+        draft: { ...d, type: "preference_test", title_en: "Home screen: A or B?", title_ar: "الشاشة الرئيسية: أ أم ب؟", intro_en: "One tap. Look at both, pick the one you would rather use.", intro_ar: "ضغطة واحدة. انظر إلى الاثنتين واختر التي تفضّل استخدامها." },
+        questions: [q],
+      };
+    },
+  },
+  {
+    label: "Usability sessions",
+    apply: (d) => {
+      const slots: SlotDraft[] = [];
+      for (let i = 0; i < 4; i++) slots.push(nextSlot(slots, d.publish_at));
+      return {
+        draft: { ...d, type: "session_recruitment", title_en: "Thirty minutes with the new checkout", title_ar: "ثلاثون دقيقة مع صفحة الدفع الجديدة", intro_en: "A one-to-one session: you try a prototype, we watch and ask. Pick a slot that suits you.", intro_ar: "جلسة فردية: تجرّب نموذجاً أولياً ونحن نراقب ونسأل. اختر الوقت المناسب لك." },
+        questions: [],
+        slots,
+      };
+    },
+  },
 ];
 
 export default function StudyBuilder() {
@@ -110,8 +155,10 @@ export default function StudyBuilder() {
   const toast = useToast();
   const [draft, setDraft] = useState<StudyDraft | null>(id ? null : blankDraft());
   const [questions, setQuestions] = useState<Question[]>(id ? [] : [newQuestion(0)]);
+  const [slots, setSlots] = useState<SlotDraft[]>([]);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [busy, setBusy] = useState<string | null>(null);
+  const [uploading, setUploading] = useState<string[]>([]);
 
   useEffect(() => {
     getSettings().then(setSettings).catch(() => {});
@@ -137,14 +184,15 @@ export default function StudyBuilder() {
           publish_at: s.publish_at,
           close_at: s.close_at,
         });
-        setQuestions(s.questions.length ? s.questions : [newQuestion(0)]);
+        setQuestions(s.questions.length ? s.questions : s.type === "session_recruitment" ? [] : [newQuestion(0)]);
+        setSlots(s.slots.map((x) => ({ id: x.id, starts_at: x.starts_at, minutes: x.minutes, place: x.place, capacity: x.capacity })));
       })
       .catch((e: Error) => toast(e.message, "error"));
   }, [id, nav, toast]);
 
   const checks = useMemo(
-    () => (draft ? runChecks(draft as unknown as Study, questions) : []),
-    [draft, questions],
+    () => (draft ? runChecks(draft as unknown as Study, questions, slots) : []),
+    [draft, questions, slots],
   );
   const hasErrors = checks.some((c) => c.level === "error");
 
@@ -155,9 +203,17 @@ export default function StudyBuilder() {
     setQuestions(questions.map((q, qi) => (qi === i ? { ...q, ...patch } : q)));
   const setOpt = (qi: number, oi: number, patch: Partial<Option>) =>
     setQ(qi, { options: questions[qi]!.options.map((o, i) => (i === oi ? { ...o, ...patch } : o)) });
+  const setSlot = (i: number, patch: Partial<SlotDraft>) => setSlots(slots.map((s, si) => (si === i ? { ...s, ...patch } : s)));
 
   function changeType(t: StudyType) {
-    if (t === "poll" && questions.length > 1) setQuestions([questions[0]!]);
+    if (t === "poll" || t === "preference_test") {
+      const first = questions[0] ?? newQuestion(0);
+      const q = { ...first, kind: "single" as QuestionKind, options: first.options.length >= 2 ? first.options : [newOption(first.id, 0), newOption(first.id, 1)] };
+      setQuestions([q]);
+    } else if (t === "survey" && questions.length === 0) {
+      setQuestions([newQuestion(0)]);
+    }
+    if (t === "session_recruitment" && slots.length === 0) setSlots([nextSlot([], draft!.publish_at)]);
     set("type", t);
   }
 
@@ -167,8 +223,22 @@ export default function StudyBuilder() {
     setQ(qi, { kind, options: needsOptions ? (q.options.length ? q.options : [newOption(q.id, 0), newOption(q.id, 1)]) : [] });
   }
 
+  async function pickImage(qi: number, oi: number, file: File | undefined) {
+    if (!file) return;
+    const oid = questions[qi]!.options[oi]!.id;
+    setUploading((u) => [...u, oid]);
+    try {
+      const url = await uploadStudyImage(file);
+      setOpt(qi, oi, { image_url: url });
+    } catch (e) {
+      toast((e as Error).message, "error");
+    } finally {
+      setUploading((u) => u.filter((x) => x !== oid));
+    }
+  }
+
   async function persist(status: StudyDraft["status"]): Promise<string> {
-    const saved = await saveStudy({ ...draft!, status }, questions);
+    const saved = await saveStudy({ ...draft!, status }, draft!.type === "session_recruitment" ? [] : questions, slots);
     setDraft({ ...draft!, id: saved, status });
     return saved;
   }
@@ -220,6 +290,9 @@ export default function StudyBuilder() {
     });
 
   const isPoll = draft.type === "poll";
+  const isPreference = draft.type === "preference_test";
+  const isSessions = draft.type === "session_recruitment";
+  const singleQuestion = isPoll || isPreference;
 
   return (
     <>
@@ -249,28 +322,24 @@ export default function StudyBuilder() {
       <div className="px-7 pb-10 grid grid-cols-[minmax(0,1fr)_400px] gap-4 items-start">
         <div className="space-y-4">
           <Card title="Type">
-            <div className="grid grid-cols-5 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               {STUDY_TYPES.map((t) => (
                 <button
                   key={t.value}
                   type="button"
-                  disabled={t.v2}
                   onClick={() => changeType(t.value)}
                   className={clsx(
-                    "text-left p-3 rounded-sm border transition-colors cursor-pointer disabled:cursor-not-allowed",
+                    "text-left p-3 rounded-sm border transition-colors cursor-pointer",
                     draft.type === t.value ? "border-brand bg-brand-light" : "border-line bg-white hover:bg-fill",
-                    t.v2 && "opacity-60",
                   )}
                 >
-                  <div className="text-[13px] font-semibold text-ink flex items-center gap-1.5">
-                    {t.label} {t.v2 && <Chip tone="v2">v2</Chip>}
-                  </div>
+                  <div className="text-[13px] font-semibold text-ink">{t.label}</div>
                   <div className="text-[11.5px] text-muted mt-1 leading-snug">{t.hint}</div>
                 </button>
               ))}
             </div>
             {!id && (
-              <div className="flex items-center gap-2 mt-3 text-[12px] text-muted">
+              <div className="flex items-center gap-2 mt-3 text-[12px] text-muted flex-wrap">
                 Start from:
                 {TEMPLATES.map((t) => (
                   <button
@@ -281,6 +350,7 @@ export default function StudyBuilder() {
                       const r = t.apply(draft);
                       setDraft(r.draft);
                       setQuestions(r.questions);
+                      if (r.slots) setSlots(r.slots);
                     }}
                   >
                     {t.label}
@@ -311,64 +381,157 @@ export default function StudyBuilder() {
             </div>
           </Card>
 
-          <Card
-            title={isPoll ? "The question" : `Questions (${questions.length} of 8)`}
-            action={
-              !isPoll && (
-                <Button size="sm" icon="plus" disabled={questions.length >= 8} onClick={() => setQuestions([...questions, newQuestion(questions.length)])}>
-                  Add question
+          {isSessions ? (
+            <Card
+              title={`Session slots (${slots.length})`}
+              action={
+                <Button size="sm" icon="plus" disabled={slots.length >= 40} onClick={() => setSlots([...slots, nextSlot(slots, draft.publish_at)])}>
+                  Add slot
                 </Button>
-              )
-            }
-          >
-            <div className="space-y-4">
-              {questions.map((q, qi) => (
-                <div key={q.id} className="border border-line rounded-sm p-3 bg-fill/50">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="h-6 w-6 rounded-full bg-ink text-white text-[11.5px] font-semibold grid place-items-center">{qi + 1}</span>
-                    <Select className="w-40" value={q.kind} onChange={(e) => changeKind(qi, e.target.value as QuestionKind)}>
-                      {QUESTION_KINDS.map((k) => (
-                        <option key={k.value} value={k.value}>{k.label}</option>
-                      ))}
-                    </Select>
-                    <div className="flex-1" />
-                    <Toggle checked={q.required} onChange={(v) => setQ(qi, { required: v })} label={<span className="text-[12px]">Required</span>} />
-                    {!isPoll && questions.length > 1 && (
-                      <Button size="sm" variant="ghost" icon="trash" onClick={() => setQuestions(questions.filter((_, i) => i !== qi))} />
-                    )}
+              }
+            >
+              {slots.length === 0 ? (
+                <div className="text-[13px] text-muted">No slots yet. Each slot is one time, one place and how many people can book it.</div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-[minmax(0,1.5fr)_110px_minmax(0,1.2fr)_90px_28px] gap-2 text-[11.5px] font-semibold uppercase tracking-[0.04em] text-muted">
+                    <div>Starts (your local time)</div><div>Length</div><div>Place or link</div><div>Seats</div><div />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <Input value={q.text_en} onChange={(e) => setQ(qi, { text_en: e.target.value })} placeholder="Question in English" />
-                    <Input className="ar" value={q.text_ar} onChange={(e) => setQ(qi, { text_ar: e.target.value })} placeholder="السؤال بالعربية" />
-                  </div>
-                  {(q.kind === "single" || q.kind === "multi") && (
-                    <div className="mt-2 space-y-1.5">
-                      {q.options.map((o, oi) => (
-                        <div key={o.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_28px] gap-2 items-center">
-                          <Input value={o.label_en} onChange={(e) => setOpt(qi, oi, { label_en: e.target.value })} placeholder={`Option ${oi + 1}`} />
-                          <Input className="ar" value={o.label_ar} onChange={(e) => setOpt(qi, oi, { label_ar: e.target.value })} placeholder="الخيار" />
-                          <button
-                            type="button"
-                            className="h-7 w-7 grid place-items-center text-muted hover:text-danger cursor-pointer disabled:opacity-30"
-                            disabled={q.options.length <= 2}
-                            onClick={() => setQ(qi, { options: q.options.filter((_, i) => i !== oi) })}
-                            aria-label="Remove option"
-                          >
-                            <Icon name="x" size={14} />
-                          </button>
-                        </div>
-                      ))}
-                      <Button size="sm" variant="ghost" icon="plus" disabled={q.options.length >= 10} onClick={() => setQ(qi, { options: [...q.options, newOption(q.id, q.options.length)] })}>
-                        Add option
-                      </Button>
+                  {slots.map((s, i) => (
+                    <div key={s.id} className="grid grid-cols-[minmax(0,1.5fr)_110px_minmax(0,1.2fr)_90px_28px] gap-2 items-center">
+                      <Input type="datetime-local" value={toLocalInput(s.starts_at)} onChange={(e) => setSlot(i, { starts_at: fromLocalInput(e.target.value) ?? s.starts_at })} />
+                      <Select value={s.minutes} onChange={(e) => setSlot(i, { minutes: Number(e.target.value) })}>
+                        {MINUTES.map((m) => (
+                          <option key={m} value={m}>{m} min</option>
+                        ))}
+                      </Select>
+                      <Input value={s.place} onChange={(e) => setSlot(i, { place: e.target.value })} placeholder="Meeting room 2, or a Meet link" />
+                      <Input type="number" min={1} max={20} value={s.capacity} onChange={(e) => setSlot(i, { capacity: Math.min(20, Math.max(1, Number(e.target.value) || 1)) })} />
+                      <button
+                        type="button"
+                        className="h-7 w-7 grid place-items-center text-muted hover:text-danger cursor-pointer"
+                        onClick={() => setSlots(slots.filter((_, si) => si !== i))}
+                        aria-label="Remove slot"
+                      >
+                        <Icon name="x" size={14} />
+                      </button>
                     </div>
-                  )}
-                  {q.kind === "scale" && <div className="text-[12px] text-muted mt-2">Answered 1 to 5. The post shows 1 = hard, 5 = easy.</div>}
-                  {q.kind === "text" && <div className="text-[12px] text-muted mt-2">One short text field. Never ask for PIN, OTP, card or password.</div>}
+                  ))}
+                  <div className="text-[12px] text-muted pt-1">
+                    The channel reads slots in Riyadh time: {slots[0] ? fmtSlot(slots[0].starts_at, slots[0].minutes) : ""}. One active booking per person per study; a member who picks again is moved. The weekly cap of {settings.hours_cap} research hours per member applies.
+                  </div>
                 </div>
-              ))}
-            </div>
-          </Card>
+              )}
+            </Card>
+          ) : (
+            <Card
+              title={isPoll ? "The question" : isPreference ? "The question and its images" : `Questions (${questions.length} of 8)`}
+              action={
+                !singleQuestion && (
+                  <Button size="sm" icon="plus" disabled={questions.length >= 8} onClick={() => setQuestions([...questions, newQuestion(questions.length)])}>
+                    Add question
+                  </Button>
+                )
+              }
+            >
+              <div className="space-y-4">
+                {questions.map((q, qi) => (
+                  <div key={q.id} className="border border-line rounded-sm p-3 bg-fill/50">
+                    {!isPreference && (
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="h-6 w-6 rounded-full bg-ink text-white text-[11.5px] font-semibold grid place-items-center">{qi + 1}</span>
+                        <Select className="w-40" value={q.kind} onChange={(e) => changeKind(qi, e.target.value as QuestionKind)}>
+                          {QUESTION_KINDS.map((k) => (
+                            <option key={k.value} value={k.value}>{k.label}</option>
+                          ))}
+                        </Select>
+                        <div className="flex-1" />
+                        <Toggle checked={q.required} onChange={(v) => setQ(qi, { required: v })} label={<span className="text-[12px]">Required</span>} />
+                        {!isPoll && questions.length > 1 && (
+                          <Button size="sm" variant="ghost" icon="trash" onClick={() => setQuestions(questions.filter((_, i) => i !== qi))} />
+                        )}
+                      </div>
+                    )}
+                    <div className="grid grid-cols-2 gap-3">
+                      <Input value={q.text_en} onChange={(e) => setQ(qi, { text_en: e.target.value })} placeholder={isPreference ? "Which one do you prefer?" : "Question in English"} />
+                      <Input className="ar" value={q.text_ar} onChange={(e) => setQ(qi, { text_ar: e.target.value })} placeholder={isPreference ? "أيهما تفضّل؟" : "السؤال بالعربية"} />
+                    </div>
+
+                    {isPreference ? (
+                      <div className="mt-3 space-y-2">
+                        {q.options.map((o, oi) => {
+                          const busyUpload = uploading.includes(o.id);
+                          return (
+                            <div key={o.id} className="grid grid-cols-[128px_minmax(0,1fr)_minmax(0,1fr)_28px] gap-2 items-center">
+                              <label
+                                className={clsx(
+                                  "relative h-24 rounded-sm border overflow-hidden grid place-items-center cursor-pointer text-[11.5px] text-muted text-center",
+                                  o.image_url ? "border-line bg-fill" : "border-dashed border-line bg-white hover:bg-fill",
+                                )}
+                              >
+                                {o.image_url ? (
+                                  <img src={o.image_url} alt={o.label_en} className="h-full w-full object-contain" />
+                                ) : busyUpload ? (
+                                  <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-muted border-t-transparent animate-spin" />
+                                ) : (
+                                  <span className="px-2">Upload image<br />PNG, JPEG, WebP · 5 MB</span>
+                                )}
+                                {o.image_url && busyUpload && <span className="absolute inset-0 bg-white/70 grid place-items-center"><span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-muted border-t-transparent animate-spin" /></span>}
+                                <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="sr-only" onChange={(e) => void pickImage(qi, oi, e.target.files?.[0])} />
+                              </label>
+                              <div className="space-y-1.5">
+                                <Input value={o.label_en} onChange={(e) => setOpt(qi, oi, { label_en: e.target.value })} placeholder={`Label, e.g. ${String.fromCharCode(65 + oi)}`} />
+                                <div className="text-[11.5px] text-muted">{o.image_url ? "Shown under the image and on its button." : "Add the image first."}</div>
+                              </div>
+                              <Input className="ar self-start" value={o.label_ar} onChange={(e) => setOpt(qi, oi, { label_ar: e.target.value })} placeholder="التسمية" />
+                              <button
+                                type="button"
+                                className="h-7 w-7 grid place-items-center text-muted hover:text-danger cursor-pointer disabled:opacity-30 self-start"
+                                disabled={q.options.length <= 2}
+                                onClick={() => setQ(qi, { options: q.options.filter((_, i) => i !== oi) })}
+                                aria-label="Remove image"
+                              >
+                                <Icon name="x" size={14} />
+                              </button>
+                            </div>
+                          );
+                        })}
+                        <Button size="sm" variant="ghost" icon="plus" disabled={q.options.length >= 6} onClick={() => setQ(qi, { options: [...q.options, newOption(q.id, q.options.length)] })}>
+                          Add image
+                        </Button>
+                        <div className="text-[12px] text-muted">Two to six images. Members tap one button and can change their pick until the study closes. Keep every image the same size, or the post looks uneven.</div>
+                      </div>
+                    ) : (
+                      (q.kind === "single" || q.kind === "multi") && (
+                        <div className="mt-2 space-y-1.5">
+                          {q.options.map((o, oi) => (
+                            <div key={o.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_28px] gap-2 items-center">
+                              <Input value={o.label_en} onChange={(e) => setOpt(qi, oi, { label_en: e.target.value })} placeholder={`Option ${oi + 1}`} />
+                              <Input className="ar" value={o.label_ar} onChange={(e) => setOpt(qi, oi, { label_ar: e.target.value })} placeholder="الخيار" />
+                              <button
+                                type="button"
+                                className="h-7 w-7 grid place-items-center text-muted hover:text-danger cursor-pointer disabled:opacity-30"
+                                disabled={q.options.length <= 2}
+                                onClick={() => setQ(qi, { options: q.options.filter((_, i) => i !== oi) })}
+                                aria-label="Remove option"
+                              >
+                                <Icon name="x" size={14} />
+                              </button>
+                            </div>
+                          ))}
+                          <Button size="sm" variant="ghost" icon="plus" disabled={q.options.length >= 10} onClick={() => setQ(qi, { options: [...q.options, newOption(q.id, q.options.length)] })}>
+                            Add option
+                          </Button>
+                        </div>
+                      )
+                    )}
+                    {!isPreference && q.kind === "scale" && <div className="text-[12px] text-muted mt-2">Answered 1 to 5. The post shows 1 = hard, 5 = easy.</div>}
+                    {!isPreference && q.kind === "text" && <div className="text-[12px] text-muted mt-2">One short text field. Never ask for PIN, OTP, card or password.</div>}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
 
           <Card title="Audience and dates">
             <div className="grid grid-cols-3 gap-3">
@@ -381,7 +544,7 @@ export default function StudyBuilder() {
                 </Select>
               </div>
               <div>
-                <Label hint="optional">Target answers</Label>
+                <Label hint="optional">{isSessions ? "Target bookings" : "Target answers"}</Label>
                 <Input type="number" min={1} value={draft.target ?? ""} onChange={(e) => set("target", e.target.value ? Number(e.target.value) : null)} placeholder="e.g. 60" />
               </div>
               <div />
@@ -414,7 +577,9 @@ export default function StudyBuilder() {
                 <Label>Close</Label>
                 <Input type="datetime-local" value={toLocalInput(draft.close_at)} onChange={(e) => set("close_at", fromLocalInput(e.target.value))} />
               </div>
-              <div className="text-[12px] text-muted self-end pb-2">A reminder goes by DM to non-responders a day before close.</div>
+              <div className="text-[12px] text-muted self-end pb-2">
+                {isSessions ? "A reminder goes by DM to members without a booking a day before close, and to everyone booked a day before their slot." : "A reminder goes by DM to non-responders a day before close."}
+              </div>
             </div>
           </Card>
         </div>
@@ -422,7 +587,7 @@ export default function StudyBuilder() {
         <div className="space-y-4 sticky top-6">
           <div>
             <Label>Slack preview</Label>
-            <SlackPreview study={draft} questions={questions} channel={settings.channel_name} />
+            <SlackPreview study={draft} questions={questions} slots={slots} channel={settings.channel_name} />
           </div>
           <Card title="Checks before posting">
             {checks.length === 0 ? (
@@ -436,7 +601,7 @@ export default function StudyBuilder() {
                 ))}
               </ul>
             )}
-            <p className="text-[11.5px] text-muted mt-3">Colleagues without a profile get the profile form first, then their answer is saved.</p>
+            <p className="text-[11.5px] text-muted mt-3">Colleagues without a profile get the profile form first, then their {isSessions ? "booking" : "answer"} is saved.</p>
           </Card>
         </div>
       </div>

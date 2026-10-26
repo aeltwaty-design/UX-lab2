@@ -21,6 +21,8 @@ export interface Option {
   position: number;
   label_en: string;
   label_ar: string;
+  /** Preference tests: a public image in the study-images bucket. */
+  image_url: string | null;
 }
 
 export interface Question {
@@ -56,11 +58,66 @@ export interface Study {
   updated_at: string;
   /** From the study_stats view. */
   response_count: number;
+  /** From the study_stats view: active bookings (session recruitment). */
+  booking_count: number;
 }
 
 export interface StudyWithQuestions extends Study {
   questions: Question[];
+  /** Session recruitment only. */
+  slots: SessionSlot[];
 }
+
+export interface SessionSlot {
+  id: string;
+  study_id: string;
+  position: number;
+  starts_at: string;
+  minutes: number;
+  place: string;
+  capacity: number;
+}
+
+export interface SessionBooking {
+  id: string;
+  slot_id: string;
+  study_id: string;
+  participant_id: string;
+  booked_at: string;
+  cancelled_at: string | null;
+  reminded_at: string | null;
+  profile: ProfileSnapshot;
+  participant: Pick<Participant, "slack_user_id" | "name" | "deleted_at"> | null;
+}
+
+export type FrictionStatus = "new" | "fixed" | "duplicate" | "by_design";
+
+export interface FrictionReport {
+  id: string;
+  participant_id: string | null;
+  slack_user_id: string | null;
+  channel_id: string | null;
+  app: "walaplus" | "walaone";
+  tried: string;
+  happened: string;
+  /** Slack permalink of the screenshot, kept as a fallback. */
+  screenshot_url: string | null;
+  /** Path in the private friction bucket once the copy succeeded. */
+  screenshot_path: string | null;
+  status: FrictionStatus;
+  note: string;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+  profile: Partial<ProfileSnapshot>;
+}
+
+export const FRICTION_STATUS: { value: FrictionStatus; label: string }[] = [
+  { value: "new", label: "New" },
+  { value: "fixed", label: "Fixed" },
+  { value: "duplicate", label: "Duplicate" },
+  { value: "by_design", label: "By design" },
+];
 
 export type AgeBand = "18-24" | "25-34" | "35-44" | "45+";
 export type Gender = "female" | "male";
@@ -154,12 +211,12 @@ export const DEFAULT_SETTINGS: Settings = {
   workspace_url: "",
 };
 
-export const STUDY_TYPES: { value: StudyType; label: string; hint: string; v2?: boolean }[] = [
+/** The types an admin can create. Friction reports are not studies: colleagues send them with /friction. */
+export const STUDY_TYPES: { value: StudyType; label: string; hint: string }[] = [
   { value: "poll", label: "Poll", hint: "One question, buttons in Slack. Answered in two taps." },
   { value: "survey", label: "Survey", hint: "Up to eight questions in a Slack form. Ten minutes at most." },
-  { value: "preference_test", label: "Preference test", hint: "Two or more images, pick one. Version two.", v2: true },
-  { value: "session_recruitment", label: "Session recruitment", hint: "Book thirty-minute sessions. Version two.", v2: true },
-  { value: "friction_report", label: "Friction report", hint: "Colleagues report a broken step. Version two.", v2: true },
+  { value: "preference_test", label: "Preference test", hint: "Two to six images in the channel, tap the one you prefer." },
+  { value: "session_recruitment", label: "Session recruitment", hint: "Colleagues book a session slot from the channel." },
 ];
 
 export const STATUS_LABEL: Record<StudyStatus, string> = {
