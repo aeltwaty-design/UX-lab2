@@ -71,6 +71,21 @@ export async function pin(channel: string, timestamp: string) {
   }
 }
 
+/** Unpins and deletes one of the bot's own messages. False when Slack refuses (already gone, or not ours). */
+export async function deleteMessage(channel: string, ts: string): Promise<boolean> {
+  try {
+    await slack("pins.remove", { channel, timestamp: ts });
+  } catch {
+    /* not pinned */
+  }
+  try {
+    await slack("chat.delete", { channel, ts });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function channelMemberIds(channel: string): Promise<string[]> {
   const ids: string[] = [];
   let cursor = "";

@@ -16,6 +16,8 @@ export interface Settings {
   teams: string[];
   members_synced_at?: string;
   profile_post_ts?: string;
+  /** Older profile posts still to be removed on the next re-post. */
+  profile_posts_old?: string[];
 }
 
 export async function getSettings(): Promise<Settings> {

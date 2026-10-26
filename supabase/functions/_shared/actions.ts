@@ -1,5 +1,5 @@
 // The operations behind every Slack-facing button, shared by the four functions.
-import { channelMemberIds, displayName, dm, listUsers, permalink, pin, postEphemeral, postMessage, slack, sleep, updateMessage } from "./slack.ts";
+import { channelMemberIds, deleteMessage, displayName, dm, listUsers, permalink, pin, postEphemeral, postMessage, slack, sleep, updateMessage } from "./slack.ts";
 import { countResponses, db, getSettings, getStudy, setSetting, snapshot, type Participant, type Settings, type Study } from "./db.ts";
 import { profilePromptBlocks, resultsBlocks, studyBlocks, totalsText } from "./blocks.ts";
 
@@ -180,14 +180,19 @@ export async function remindMissingProfiles(): Promise<Outcome> {
   return { ok: true, message: `Profile form sent by DM to ${sent} members.` };
 }
 
-/** Posts (and pins) the profile prompt in the channel. */
+/** Posts (and pins) the profile prompt in the channel, after removing the previous one. */
 export async function repostProfile(): Promise<Outcome> {
   const settings = await getSettings();
   const channel = needChannel(settings);
+  const old = [settings.profile_post_ts, ...(settings.profile_posts_old ?? [])].filter((ts): ts is string => Boolean(ts));
+  let removed = 0;
+  for (const ts of old) if (await deleteMessage(channel, ts)) removed++;
   const r = await postMessage(channel, "Fill in your research profile · عبّئ ملفك", profilePromptBlocks(settings));
   await pin(channel, r.ts);
   await setSetting("profile_post_ts", r.ts);
-  return { ok: true, message: `Profile form posted and pinned in ${settings.channel_name}.` };
+  if (settings.profile_posts_old?.length) await setSetting("profile_posts_old", []);
+  const note = removed ? ` Removed ${removed} older post${removed === 1 ? "" : "s"}.` : "";
+  return { ok: true, message: `Profile form posted and pinned in ${settings.channel_name}.${note}` };
 }
 
 export async function testSlack(): Promise<Outcome> {
