@@ -16,7 +16,7 @@ Slack is the front door. This app is the back office. Colleagues never sign in t
 
 ## The rules the code enforces
 
-- **No profile, no answer.** A colleague who taps a poll or survey without a profile gets the profile form first. The tap is remembered and saved the moment the profile is. The form is also sent by DM when a study goes live and when someone joins the channel.
+- **No profile, no answer.** A colleague who taps a poll or survey without a profile gets the profile form first. The tap is remembered and saved the moment the profile is. The form is also sent by DM when a study goes live and when someone joins the channel. The profile is saved once and is then final: the form does not reopen for that member, a late submission is refused, and a database trigger refuses changes from the bot. To correct one, Participants → Forget; the colleague then fills the form in again (a new row; earlier answers keep the old profile).
 - **Identified research.** Admins see who answered what, with name, age, gender, device, team and apps. The channel only ever sees totals, and any group smaller than the threshold in Settings (default 8) is written as "under 8".
 - **Never asked.** The builder refuses a study that mentions PIN, OTP, card or password, in English or Arabic.
 - **Not reported until posted.** A study moves to Reported only when its results post has gone to the channel.
@@ -28,7 +28,7 @@ Slack is the front door. This app is the back office. Colleagues never sign in t
 
 ### 1. Database
 
-The schema is already applied to the "UX Lab" project if you are reading this from the first pull request. Otherwise open the SQL editor and run the files in `supabase/migrations/` in order, `0001` to `0006`.
+The schema is already applied to the "UX Lab" project if you are reading this from the first pull request. Otherwise open the SQL editor and run the files in `supabase/migrations/` in order, `0001` to `0007`.
 
 Add yourself as admin (SQL editor):
 
@@ -100,4 +100,4 @@ Three more things colleagues can do from Slack, all behind the same profile gate
 - **Session recruitment.** The builder takes slots (start, length, place or link, seats). The post lists the slots, strikes through full ones and offers a picker; a booking confirms by DM with a cancel button, counts against the weekly hours cap, and gets a reminder DM the day before. Moving to another slot cancels the first one. Tables `session_slots` and `session_bookings`.
 - **Friction inbox.** `/friction` anywhere in Slack, or the pinned "Report a broken step" button (Friction inbox → Post the prompt), opens a form: app, what you tried, what happened, optional screenshot. The screenshot is copied into the private `friction` bucket (the Slack link is kept as a fallback). The inbox shows each report with the sender's profile; you set the status (new, fixed, duplicate, by design), keep a private note and reply by DM. Every Sunday at 09:00 Riyadh the bot posts a digest to the channel (received, fixed, open); "Send digest now" posts it on demand.
 
-Migration `supabase/migrations/0003_version_two.sql` adds the columns, tables, view change, buckets and policies. The Slack manifest gained the `commands` and `files:read` scopes and the slash command, so an existing app needs its manifest updated and a reinstall. `0004_delete_guard.sql` adds the trigger that refuses to delete a live study. `0005_answer_changes.sql` adds `studies.allow_changes` and lists the view columns explicitly. `0006_compare_sheet.sql` adds `studies.compare_url`.
+Migration `supabase/migrations/0003_version_two.sql` adds the columns, tables, view change, buckets and policies. The Slack manifest gained the `commands` and `files:read` scopes and the slash command, so an existing app needs its manifest updated and a reinstall. `0004_delete_guard.sql` adds the trigger that refuses to delete a live study. `0005_answer_changes.sql` adds `studies.allow_changes` and lists the view columns explicitly. `0006_compare_sheet.sql` adds `studies.compare_url`. `0007_profile_final.sql` adds the trigger that refuses changes to a saved profile from the bot.

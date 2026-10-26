@@ -30,18 +30,25 @@ interface Payload {
   view?: { callback_id: string; private_metadata?: string; state: { values: Record<string, SurveyValues> } };
 }
 
+/** Sent instead of the form to a member whose profile is already saved: it is filled in once and is then final. */
+const PROFILE_FINAL =
+  "Your profile is already saved and is final, so it cannot be changed. If something in it is wrong, message the research team. · ملفك محفوظ ونهائي ولا يمكن تغييره. إن كان فيه خطأ فراسل فريق البحث.";
+
+/** Opens the profile form for a member who has none. A member with a profile gets a note instead. */
 async function openProfile(trigger_id: string, user: string, pending: Pending | null, channel: string) {
   const [settings, existing] = await Promise.all([getSettings(), getParticipant(user)]);
+  if (existing) {
+    await thank(channel, user, PROFILE_FINAL);
+    return;
+  }
   let prefill = "";
-  if (!existing) {
-    try {
-      prefill = displayName(await userInfo(user));
-    } catch {
-      /* users:read missing */
-    }
+  try {
+    prefill = displayName(await userInfo(user));
+  } catch {
+    /* users:read missing */
   }
   if (pending) await db.from("pending_actions").upsert({ slack_user_id: user, payload: pending }, { onConflict: "slack_user_id" });
-  await openView(trigger_id, profileModal(settings, prefill, existing, pending, channel));
+  await openView(trigger_id, profileModal(settings, prefill, pending, channel));
 }
 
 /** The friction form, behind the profile gate. Falls back to a form without the screenshot field when Slack refuses it (no files:read yet). */
@@ -234,14 +241,16 @@ Deno.serve(async (req) => {
       if (payload.view.callback_id === "profile") {
         const r = readProfile(values);
         if ("errors" in r) return ok({ response_action: "errors", errors: r.errors });
-        const { data, error } = await db
-          .from("participants")
-          .upsert({ slack_user_id: user, ...r.row, deleted_at: null }, { onConflict: "slack_user_id" })
-          .select("*")
-          .single();
+        const pending = meta.pending ?? null;
+        // Saved once, then final: a second submission (a stale form, two windows) is refused rather than merged in.
+        if (await getParticipant(user)) {
+          await db.from("pending_actions").delete().eq("slack_user_id", user);
+          await thank(meta.channel, user, PROFILE_FINAL);
+          return ok({ response_action: "clear" });
+        }
+        const { data, error } = await db.from("participants").insert({ slack_user_id: user, ...r.row }).select("*").single();
         if (error) throw error;
         const p = data as Participant;
-        const pending = meta.pending ?? null;
         if (pending?.kind === "survey") {
           await db.from("pending_actions").delete().eq("slack_user_id", user);
           const study = await getStudy(pending.study_id);
@@ -258,7 +267,7 @@ Deno.serve(async (req) => {
           return ok({ response_action: "clear" });
         }
         await applyPending(p, pending, user);
-        if (!pending) await thank(meta.channel, user, `Profile saved. Thank you. Tap any poll or survey in ${(await getSettings()).channel_name} to answer.`);
+        if (!pending) await thank(meta.channel, user, `Profile saved and final. Thank you. Tap any poll or survey in ${(await getSettings()).channel_name} to answer.`);
         return ok({ response_action: "clear" });
       }
 

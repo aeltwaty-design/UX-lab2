@@ -96,7 +96,7 @@ export default function Participants() {
     <>
       <PageHeader
         title="Participants"
-        sub="Everyone in the channel who has filled in a profile. No profile, no answers: the bot asks for it first."
+        sub="Everyone in the channel who has filled in a profile. No profile, no answers: the bot asks for it first. A saved profile is final; to correct one, forget the member and they fill it in again."
         actions={
           <>
             <Button icon="users" loading={busy === "sync_members"} onClick={slack("sync_members")}>Sync channel</Button>

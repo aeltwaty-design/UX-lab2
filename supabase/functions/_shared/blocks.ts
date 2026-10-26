@@ -1,6 +1,6 @@
 // Block Kit builders. Every message is bilingual: English line, Arabic line.
 import type { Block } from "./slack.ts";
-import { fmtDate, fmtSlot, smallGroup, type Option, type Participant, type Question, type Settings, type SlotWithBookings, type Study } from "./db.ts";
+import { fmtDate, fmtSlot, smallGroup, type Option, type Question, type Settings, type SlotWithBookings, type Study } from "./db.ts";
 
 const AGE_BANDS = ["18-24", "25-34", "35-44", "45+"];
 const LETTERS = ["A", "B", "C", "D", "E", "F"];
@@ -112,8 +112,8 @@ export function studyBlocks(study: Study, settings: Settings, closed = false, an
 export function profilePromptBlocks(settings: Settings): Block[] {
   return [
     md(bi(
-      `*Before your first answer, fill in a short profile (one minute, once).*\nName, age band, gender, phone type, team and the apps you use; all fields are required. Every answer you give in ${settings.channel_name} is linked to it, so we can follow up and see how each group experiences the apps.`,
-      `*قبل أول إجابة، عبّئ ملفاً قصيراً (دقيقة واحدة، مرة واحدة).*\nالاسم والفئة العمرية والجنس ونوع الهاتف والفريق والتطبيقات؛ كل الحقول مطلوبة. كل إجابة تقدّمها مرتبطة به.`,
+      `*Before your first answer, fill in a short profile (one minute, once).*\nName, age band, gender, phone type, team and the apps you use; all fields are required. It is saved once and cannot be changed afterwards, so check it before you save. Every answer you give in ${settings.channel_name} is linked to it, so we can follow up and see how each group experiences the apps.`,
+      `*قبل أول إجابة، عبّئ ملفاً قصيراً (دقيقة واحدة، مرة واحدة).*\nالاسم والفئة العمرية والجنس ونوع الهاتف والفريق والتطبيقات؛ كل الحقول مطلوبة. يُحفظ مرة واحدة ولا يمكن تغييره بعد ذلك، فراجعه قبل الحفظ. كل إجابة تقدّمها مرتبطة به.`,
     )),
     {
       type: "actions",
@@ -132,7 +132,8 @@ export interface Pending {
   channel?: string;
 }
 
-export function profileModal(settings: Settings, prefillName: string, existing: Participant | null, pending: Pending | null, channel: string): Block {
+/** The profile form. It is filled in once: after Save the row is final (the bot refuses to reopen it and the database refuses changes). */
+export function profileModal(settings: Settings, prefillName: string, pending: Pending | null, channel: string): Block {
   const teams = settings.teams.length ? settings.teams : ["Other"];
   return {
     type: "modal",
@@ -142,17 +143,17 @@ export function profileModal(settings: Settings, prefillName: string, existing: 
     submit: pt("Save · حفظ"),
     close: pt("Cancel"),
     blocks: [
-      md(bi("Once only. All fields are required. Every answer you give is linked to this profile.", "مرة واحدة فقط. كل الحقول مطلوبة. كل إجابة تقدّمها مرتبطة بهذا الملف.")),
+      md(bi("Once only: after Save the profile is final and cannot be changed. All fields are required. Every answer you give is linked to this profile.", "مرة واحدة فقط: بعد الحفظ يصبح الملف نهائياً ولا يمكن تغييره. كل الحقول مطلوبة. كل إجابة تقدّمها مرتبطة بهذا الملف.")),
       {
         type: "input",
         block_id: "name",
         label: pt("Name · الاسم"),
-        element: { type: "plain_text_input", action_id: "v", initial_value: existing?.name ?? prefillName, max_length: 80 },
+        element: { type: "plain_text_input", action_id: "v", ...(prefillName ? { initial_value: prefillName } : {}), max_length: 80 },
       },
-      select("age_band", "Age · العمر", AGE_BANDS.map((a) => ({ value: a, text: a })), existing?.age_band),
-      select("gender", "Gender · الجنس", [{ value: "female", text: "Female · أنثى" }, { value: "male", text: "Male · ذكر" }], existing?.gender),
-      select("device", "Phone type · نوع الهاتف", [{ value: "iphone", text: "iPhone" }, { value: "android", text: "Android" }], existing?.device),
-      select("team", "Team · الفريق", teams.map((t) => ({ value: t, text: t })), existing?.team ?? undefined),
+      select("age_band", "Age · العمر", AGE_BANDS.map((a) => ({ value: a, text: a }))),
+      select("gender", "Gender · الجنس", [{ value: "female", text: "Female · أنثى" }, { value: "male", text: "Male · ذكر" }]),
+      select("device", "Phone type · نوع الهاتف", [{ value: "iphone", text: "iPhone" }, { value: "android", text: "Android" }]),
+      select("team", "Team · الفريق", teams.map((t) => ({ value: t, text: t }))),
       {
         type: "input",
         block_id: "apps",
@@ -164,12 +165,9 @@ export function profileModal(settings: Settings, prefillName: string, existing: 
             { text: pt("WalaPlus"), value: "walaplus" },
             { text: pt("WalaOne"), value: "walaone" },
           ],
-          ...(existing?.apps?.length
-            ? { initial_options: existing.apps.map((a) => ({ text: pt(a === "walaone" ? "WalaOne" : "WalaPlus"), value: a })) }
-            : {}),
         },
       },
-      select("language", "Language · اللغة", [{ value: "en", text: "English" }, { value: "ar", text: "العربية" }], existing?.language ?? settings.default_lang),
+      select("language", "Language · اللغة", [{ value: "en", text: "English" }, { value: "ar", text: "العربية" }], settings.default_lang),
     ],
   };
 }
