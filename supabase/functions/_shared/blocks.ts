@@ -56,8 +56,8 @@ export function studyBlocks(study: Study, settings: Settings, closed = false, an
 export function profilePromptBlocks(settings: Settings): Block[] {
   return [
     md(bi(
-      `*Before your first answer, fill in a short profile (one minute, once).*\nName, age, gender and phone. Every answer you give in ${settings.channel_name} is linked to it, so we can follow up and see how each group experiences the apps.`,
-      `*قبل أول إجابة، عبّئ ملفاً قصيراً (دقيقة واحدة، مرة واحدة).*\nالاسم والعمر والجنس والهاتف. كل إجابة تقدّمها مرتبطة به.`,
+      `*Before your first answer, fill in a short profile (one minute, once).*\nName, age band, gender and phone type (iPhone or Android). Every answer you give in ${settings.channel_name} is linked to it, so we can follow up and see how each group experiences the apps.`,
+      `*قبل أول إجابة، عبّئ ملفاً قصيراً (دقيقة واحدة، مرة واحدة).*\nالاسم والفئة العمرية والجنس ونوع الهاتف (آيفون أو أندرويد). كل إجابة تقدّمها مرتبطة به.`,
     )),
     {
       type: "actions",
@@ -107,7 +107,7 @@ export function profileModal(settings: Settings, prefillName: string, existing: 
       },
       select("age_band", "Age · العمر", AGE_BANDS.map((a) => ({ value: a, text: a })), existing?.age_band),
       select("gender", "Gender · الجنس", [{ value: "female", text: "Female · أنثى" }, { value: "male", text: "Male · ذكر" }], existing?.gender),
-      select("device", "Phone · الهاتف", [{ value: "iphone", text: "iPhone" }, { value: "android", text: "Android" }], existing?.device),
+      select("device", "Phone type · نوع الهاتف", [{ value: "iphone", text: "iPhone" }, { value: "android", text: "Android" }], existing?.device),
       select("team", "Team · الفريق", teams.map((t) => ({ value: t, text: t })), existing?.team ?? undefined, true),
       {
         type: "input",
