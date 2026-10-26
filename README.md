@@ -21,12 +21,13 @@ Slack is the front door. This app is the back office. Colleagues never sign in t
 - **Never asked.** The builder refuses a study that mentions PIN, OTP, card or password, in English or Arabic.
 - **Not reported until posted.** A study moves to Reported only when its results post has gone to the channel.
 - **One answer per member per study**, changeable until the study closes.
+- **Closed before deleted.** A live study cannot be deleted, from the dashboard or straight in the database. Close it, and Delete on the study page removes the study, its answers or bookings and its images, and by default the bot's posts for it in the channel. Drafts and scheduled studies can be deleted from the editor, since nothing of theirs reached Slack.
 
 ## Set-up, in order
 
 ### 1. Database
 
-The schema is already applied to the "UX Lab" project if you are reading this from the first pull request. Otherwise open the SQL editor and run `supabase/migrations/0001_init.sql`, then `0002_cron_secret.sql`.
+The schema is already applied to the "UX Lab" project if you are reading this from the first pull request. Otherwise open the SQL editor and run the files in `supabase/migrations/` in order, `0001` to `0004`.
 
 Add yourself as admin (SQL editor):
 
@@ -98,4 +99,4 @@ Three more things colleagues can do from Slack, all behind the same profile gate
 - **Session recruitment.** The builder takes slots (start, length, place or link, seats). The post lists the slots, strikes through full ones and offers a picker; a booking confirms by DM with a cancel button, counts against the weekly hours cap, and gets a reminder DM the day before. Moving to another slot cancels the first one. Tables `session_slots` and `session_bookings`.
 - **Friction inbox.** `/friction` anywhere in Slack, or the pinned "Report a broken step" button (Friction inbox → Post the prompt), opens a form: app, what you tried, what happened, optional screenshot. The screenshot is copied into the private `friction` bucket (the Slack link is kept as a fallback). The inbox shows each report with the sender's profile; you set the status (new, fixed, duplicate, by design), keep a private note and reply by DM. Every Sunday at 09:00 Riyadh the bot posts a digest to the channel (received, fixed, open); "Send digest now" posts it on demand.
 
-Migration `supabase/migrations/0003_version_two.sql` adds the columns, tables, view change, buckets and policies. The Slack manifest gained the `commands` and `files:read` scopes and the slash command, so an existing app needs its manifest updated and a reinstall.
+Migration `supabase/migrations/0003_version_two.sql` adds the columns, tables, view change, buckets and policies. The Slack manifest gained the `commands` and `files:read` scopes and the slash command, so an existing app needs its manifest updated and a reinstall. `0004_delete_guard.sql` adds the trigger that refuses to delete a live study.

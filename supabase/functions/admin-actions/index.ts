@@ -2,7 +2,7 @@
 // The caller must be a signed-in admin (Supabase Auth JWT + admins table).
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { db } from "../_shared/db.ts";
-import { closeStudy, deletePost, dmParticipant, frictionDigest, postFrictionPrompt, postResults, publishStudy, remindMissingProfiles, remindStudy, repostProfile, sessionReminders, syncMembers, testSlack, type Outcome } from "../_shared/actions.ts";
+import { closeStudy, deletePost, deleteStudy, dmParticipant, frictionDigest, postFrictionPrompt, postResults, publishStudy, remindMissingProfiles, remindStudy, repostProfile, sessionReminders, syncMembers, testSlack, type Outcome } from "../_shared/actions.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -26,7 +26,7 @@ async function callerIsAdmin(req: Request): Promise<boolean> {
   return Boolean(row);
 }
 
-type Body = { action: string; study_id?: string; link?: string; participant_id?: string; text?: string };
+type Body = { action: string; study_id?: string; link?: string; participant_id?: string; text?: string; remove_posts?: boolean };
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -59,6 +59,8 @@ Deno.serve(async (req) => {
         return reply(await testSlack());
       case "delete_post":
         return reply(await deletePost(body.link ?? ""));
+      case "delete_study":
+        return reply(await deleteStudy(id, body.remove_posts === true));
       case "post_friction_prompt":
         return reply(await postFrictionPrompt());
       case "friction_digest":

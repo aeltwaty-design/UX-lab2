@@ -143,11 +143,6 @@ export async function listBookings(studyId: string): Promise<SessionBooking[]> {
   return (data ?? []) as SessionBooking[];
 }
 
-export async function deleteStudy(id: string): Promise<void> {
-  const { error } = await supabase.from("studies").delete().eq("id", id);
-  if (error) fail(error);
-}
-
 export async function setStudyStatus(id: string, status: Study["status"]): Promise<void> {
   const { error } = await supabase.from("studies").update({ status }).eq("id", id);
   if (error) fail(error);
@@ -278,6 +273,7 @@ export type AdminAction =
   | { action: "sync_members" }
   | { action: "test_slack" }
   | { action: "delete_post"; link: string }
+  | { action: "delete_study"; study_id: string; remove_posts: boolean }
   | { action: "post_friction_prompt" }
   | { action: "friction_digest" }
   | { action: "session_reminders" }

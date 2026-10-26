@@ -7,8 +7,9 @@ import { StatTile } from "@/components/StatTile";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
+import { ConfirmDialog } from "@/components/ui/Dialog";
 import { Empty, Spinner } from "@/components/ui/Empty";
-import { Select } from "@/components/ui/Field";
+import { Select, Toggle } from "@/components/ui/Field";
 import { useToast } from "@/components/ui/Toast";
 import { getResultsPost, getStudy, listBookings, listParticipants, listResponses, runAdminAction } from "@/data/queries";
 import { daysBetween, fmtDate, fmtDateTime, fmtSlot, pct, typeLabel } from "@/lib/format";
@@ -30,6 +31,8 @@ export default function StudyResults() {
   const [split, setSplit] = useState<SplitKey>("none");
   const [qIndex, setQIndex] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [removePosts, setRemovePosts] = useState(true);
 
   const load = useCallback(() => {
     getStudy(id)
@@ -91,6 +94,19 @@ export default function StudyResults() {
       if (!r.ok) throw new Error(r.message);
       return r.message;
     });
+  const hasPosts = Boolean(study.slack_ts || post?.slack_ts);
+  async function remove() {
+    setBusy("delete_study");
+    try {
+      const r = await runAdminAction({ action: "delete_study", study_id: id, remove_posts: hasPosts && removePosts });
+      if (!r.ok) throw new Error(r.message);
+      toast(r.message);
+      nav("/studies");
+    } catch (e) {
+      toast((e as Error).message, "error");
+      setBusy(null);
+    }
+  }
 
   const sessions = study.type === "session_recruitment";
   const preference = study.type === "preference_test";
@@ -125,6 +141,17 @@ export default function StudyResults() {
         }
         actions={
           <>
+            {isLive ? (
+              <span title="Close the study first">
+                <Button variant="danger" icon="trash" disabled>
+                  Delete
+                </Button>
+              </span>
+            ) : (
+              <Button variant="danger" icon="trash" loading={busy === "delete_study"} onClick={() => setConfirmDelete(true)}>
+                Delete
+              </Button>
+            )}
             {(study.status === "draft" || study.status === "scheduled") && (
               <>
                 <Button onClick={() => nav(`/studies/${id}/edit`)}>Edit</Button>
@@ -394,6 +421,29 @@ export default function StudyResults() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title={`Delete “${study.title_en || "Untitled"}”?`}
+        confirmLabel="Delete study"
+        danger
+        busy={busy === "delete_study"}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={remove}
+      >
+        <p>
+          This permanently removes the study
+          {answered ? ` and its ${answered} ${sessions ? (answered === 1 ? "booking" : "bookings") : answered === 1 ? "answer" : "answers"}` : ""}. There is no undo.
+        </p>
+        {hasPosts && (
+          <Toggle
+            checked={removePosts}
+            onChange={setRemovePosts}
+            label="Also remove the bot's posts from the channel"
+            hint="The study post and the results post, if any. Turn this off to keep them as a record."
+          />
+        )}
+      </ConfirmDialog>
     </>
   );
 }

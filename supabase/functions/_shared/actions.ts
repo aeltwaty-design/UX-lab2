@@ -237,6 +237,37 @@ export async function deletePost(link: string): Promise<Outcome> {
   return { ok: true, message: "Post deleted." };
 }
 
+/**
+ * Removes a draft, scheduled, closed or reported study with everything hanging off it (answers, bookings, slots,
+ * results post row, preference images) and, when asked, the bot's posts for it in the channel.
+ * A live study must be closed first; the database refuses the delete as well.
+ */
+export async function deleteStudy(id: string, removePosts: boolean): Promise<Outcome> {
+  const [study, settings] = await Promise.all([getStudy(id), getSettings()]);
+  if (study.status === "live") return { ok: false, message: "Close the study before deleting it." };
+  const notes: string[] = [];
+  if (removePosts) {
+    let removed = 0;
+    if (study.slack_channel_id && study.slack_ts && (await deleteMessage(study.slack_channel_id, study.slack_ts))) removed++;
+    const { data: post, error } = await db.from("results_posts").select("slack_ts").eq("study_id", id).maybeSingle();
+    if (error) throw error;
+    const resultsTs = (post as { slack_ts: string | null } | null)?.slack_ts;
+    if (resultsTs && settings.channel_id && (await deleteMessage(settings.channel_id, resultsTs))) removed++;
+    notes.push(removed ? `${removed} post${removed === 1 ? "" : "s"} removed from ${settings.channel_name}` : "no posts to remove");
+  }
+  const images = study.questions
+    .flatMap((q) => q.options.map((o) => o.image_url ?? ""))
+    .map((u) => u.split("/study-images/")[1] ?? "")
+    .filter(Boolean);
+  if (images.length) {
+    const { error } = await db.storage.from("study-images").remove(images);
+    if (error) console.error("delete images", error);
+  }
+  const { error } = await db.from("studies").delete().eq("id", id);
+  if (error) throw error;
+  return { ok: true, message: `Study deleted${notes.length ? ` (${notes.join(", ")})` : ""}.` };
+}
+
 export async function testSlack(): Promise<Outcome> {
   const settings = await getSettings();
   try {

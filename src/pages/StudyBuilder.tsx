@@ -9,8 +9,9 @@ import { Chip } from "@/components/ui/Chip";
 import { Input, Label, Select, Textarea, Toggle } from "@/components/ui/Field";
 import { Spinner } from "@/components/ui/Empty";
 import { Icon } from "@/components/Icon";
+import { ConfirmDialog } from "@/components/ui/Dialog";
 import { useToast } from "@/components/ui/Toast";
-import { deleteStudy, getSettings, getStudy, runAdminAction, saveStudy, uploadStudyImage, type StudyDraft } from "@/data/queries";
+import { getSettings, getStudy, runAdminAction, saveStudy, uploadStudyImage, type StudyDraft } from "@/data/queries";
 import { runChecks } from "@/lib/checks";
 import { fmtSlot, fromLocalInput, toLocalInput } from "@/lib/format";
 import type { SlotDraft } from "@/lib/preview";
@@ -158,6 +159,7 @@ export default function StudyBuilder() {
   const [slots, setSlots] = useState<SlotDraft[]>([]);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [busy, setBusy] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [uploading, setUploading] = useState<string[]>([]);
 
   useEffect(() => {
@@ -284,8 +286,11 @@ export default function StudyBuilder() {
 
   const remove = () =>
     act("delete", async () => {
-      if (draft.id) await deleteStudy(draft.id);
-      toast("Study deleted.");
+      if (!draft.id) return;
+      const r = await runAdminAction({ action: "delete_study", study_id: draft.id, remove_posts: false });
+      if (!r.ok) throw new Error(r.message);
+      setConfirmDelete(false);
+      toast(r.message);
       nav("/studies");
     });
 
@@ -308,7 +313,7 @@ export default function StudyBuilder() {
         actions={
           <>
             {draft.id && (
-              <Button variant="danger" icon="trash" loading={busy === "delete"} onClick={remove}>
+              <Button variant="danger" icon="trash" loading={busy === "delete"} onClick={() => setConfirmDelete(true)}>
                 Delete
               </Button>
             )}
@@ -318,6 +323,18 @@ export default function StudyBuilder() {
           </>
         }
       />
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title={`Delete “${draft.title_en || "Untitled"}”?`}
+        confirmLabel={draft.status === "scheduled" ? "Delete scheduled study" : "Delete draft"}
+        danger
+        busy={busy === "delete"}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={remove}
+      >
+        <p>This permanently removes the {draft.status === "scheduled" ? "scheduled study" : "draft"}. Nothing of it reached the channel. There is no undo.</p>
+      </ConfirmDialog>
 
       <div className="px-7 pb-10 grid grid-cols-[minmax(0,1fr)_400px] gap-4 items-start">
         <div className="space-y-4">
