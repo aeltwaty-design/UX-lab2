@@ -122,7 +122,7 @@ export function SlackPreview({
           <div className="text-[11.5px] text-muted mt-2.5">
             {closed
               ? `Closed. Thanks to everyone who ${sessions ? "booked" : "answered"}.`
-              : `Closes ${fmtDate(study.close_at)} · ${sessions ? "bookings" : "answers"} are linked to your profile · results back in this channel`}
+              : `Closes ${fmtDate(study.close_at)} · ${sessions ? "bookings" : "answers"} are linked to your profile${!sessions && study.allow_changes === false ? " · answers are final" : ""} · results back in this channel`}
           </div>
         </div>
       </div>

@@ -1,6 +1,6 @@
 // The operations behind every Slack-facing button, shared by the four functions.
 import { channelMemberIds, deleteMessage, displayName, dm, downloadFile, listUsers, permalink, pin, postEphemeral, postMessage, slack, SlackError, sleep, updateMessage, userInfo } from "./slack.ts";
-import { countResponses, db, fmtSlot, getSettings, getSlots, getStudy, riyadh, setSetting, snapshot, weekKey, type Participant, type Settings, type SlotWithBookings, type Study } from "./db.ts";
+import { countResponses, db, fmtSlot, getSettings, getSlots, getStudy, hasAnswered, riyadh, setSetting, snapshot, weekKey, type Participant, type Settings, type SlotWithBookings, type Study } from "./db.ts";
 import { frictionDigestBlocks, frictionPromptBlocks, profilePromptBlocks, resultsBlocks, studyBlocks, totalsText } from "./blocks.ts";
 
 export interface Outcome {
@@ -306,9 +306,11 @@ export async function testSlack(): Promise<Outcome> {
 
 // ---------- answers ----------
 
-export async function recordPollTap(p: Participant, studyId: string, optionId: string): Promise<{ label: string; closes: string }> {
+/** Records a poll or preference-test tap. Throws "closed" after close, and "final" when the study takes one answer and the member already gave it. */
+export async function recordPollTap(p: Participant, studyId: string, optionId: string): Promise<{ label: string; closes: string; final: boolean }> {
   const study = await getStudy(studyId);
   if (study.status !== "live") throw new Error("closed");
+  if (study.allow_changes === false && (await hasAnswered(studyId, p.id))) throw new Error("final");
   const q = study.questions[0];
   const opt = q?.options.find((o) => o.id === optionId);
   if (!q || !opt) throw new Error("unknown option");
@@ -322,16 +324,18 @@ export async function recordPollTap(p: Participant, studyId: string, optionId: s
   await db.from("answers").delete().eq("response_id", rid).eq("question_id", q.id);
   const ins = await db.from("answers").insert({ response_id: rid, question_id: q.id, option_id: opt.id });
   if (ins.error) throw ins.error;
-  return { label: opt.label_en, closes: fmt(study.close_at) };
+  return { label: opt.label_en, closes: fmt(study.close_at), final: study.allow_changes === false };
 }
 
 export interface SlackFile { id: string; name?: string; mimetype?: string; url_private?: string; url_private_download?: string; permalink?: string }
 
 export type SurveyValues = Record<string, { type: string; value?: string; selected_option?: { value: string }; selected_options?: { value: string }[]; files?: SlackFile[] }>;
 
+/** Saves a survey submission. Throws "closed" after close, and "final" when the study takes one answer and the member already answered. */
 export async function recordSurvey(p: Participant, studyId: string, values: Record<string, SurveyValues>): Promise<Record<string, string> | null> {
   const study = await getStudy(studyId);
   if (study.status !== "live") throw new Error("closed");
+  if (study.allow_changes === false && (await hasAnswered(studyId, p.id))) throw new Error("final");
   const errors: Record<string, string> = {};
   const rows: { question_id: string; option_id?: string; value_text?: string; value_num?: number }[] = [];
   for (const q of study.questions) {

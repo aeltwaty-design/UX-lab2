@@ -58,6 +58,8 @@ export interface Study {
   slack_channel_id: string | null;
   slack_ts: string | null;
   reminder_sent_at: string | null;
+  /** False: a member's first answer is final; later taps and submissions are refused. */
+  allow_changes: boolean;
   questions: Question[];
 }
 
@@ -134,6 +136,13 @@ export async function getParticipant(slackUserId: string): Promise<Participant |
 
 export function snapshot(p: Participant) {
   return { name: p.name, age_band: p.age_band, gender: p.gender, device: p.device, team: p.team, apps: p.apps, language: p.language };
+}
+
+/** True when the member already has a response in the study. */
+export async function hasAnswered(studyId: string, participantId: string): Promise<boolean> {
+  const { data, error } = await db.from("responses").select("id").eq("study_id", studyId).eq("participant_id", participantId).maybeSingle();
+  if (error) throw error;
+  return Boolean(data);
 }
 
 export async function countResponses(studyId: string): Promise<number> {

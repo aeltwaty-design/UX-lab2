@@ -83,6 +83,7 @@ function blankDraft(): StudyDraft {
     target: null,
     publish_at: publish.toISOString(),
     close_at: close.toISOString(),
+    allow_changes: true,
   };
 }
 
@@ -188,6 +189,7 @@ export default function StudyBuilder() {
           target: s.target,
           publish_at: s.publish_at,
           close_at: s.close_at,
+          allow_changes: s.allow_changes ?? true,
         });
         setQuestions(s.questions.length ? s.questions : s.type === "session_recruitment" ? [] : [newQuestion(0)]);
         setSlots(s.slots.map((x) => ({ id: x.id, starts_at: x.starts_at, minutes: x.minutes, place: x.place, capacity: x.capacity })));
@@ -613,7 +615,16 @@ export default function StudyBuilder() {
                 <Label hint="optional">{isSessions ? "Target bookings" : "Target answers"}</Label>
                 <Input type="number" min={1} value={draft.target ?? ""} onChange={(e) => set("target", e.target.value ? Number(e.target.value) : null)} placeholder="e.g. 60" />
               </div>
-              <div />
+              <div className="self-end pb-1">
+                {!isSessions && (
+                  <Toggle
+                    checked={draft.allow_changes}
+                    onChange={(v) => set("allow_changes", v)}
+                    label="Members can change their answer"
+                    hint={draft.allow_changes ? "Until the study closes. A second tap replaces the first." : "Off: the first answer is final, and later taps get a short note."}
+                  />
+                )}
+              </div>
               {draft.audience === "teams" && (
                 <div className="col-span-3 flex flex-wrap gap-1.5">
                   {settings.teams.map((t) => {

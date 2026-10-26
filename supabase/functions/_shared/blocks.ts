@@ -96,10 +96,11 @@ export function studyBlocks(study: Study, settings: Settings, closed = false, an
   }
 
   const sessions = study.type === "session_recruitment";
+  const finalAnswers = !sessions && study.allow_changes === false;
   blocks.push(
     closed
       ? ctx(`Closed · ${smallGroup(answered, settings.small_group)} ${sessions ? "booked" : "answered"} · results come back here. Thank you.\nأُغلقت الدراسة. شكراً لكل من شارك.`)
-      : ctx(`Closes ${fmtDate(study.close_at)} · ${sessions ? "bookings" : "answers"} are linked to your profile · results come back in this channel\nتُغلق ${fmtDate(study.close_at)} · مشاركتك مرتبطة بملفك · النتائج تعود هنا`),
+      : ctx(`Closes ${fmtDate(study.close_at)} · ${sessions ? "bookings" : "answers"} are linked to your profile${finalAnswers ? " · answers are final" : ""} · results come back in this channel\nتُغلق ${fmtDate(study.close_at)} · مشاركتك مرتبطة بملفك${finalAnswers ? " · الإجابات نهائية" : ""} · النتائج تعود هنا`),
   );
   return blocks;
 }

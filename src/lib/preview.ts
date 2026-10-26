@@ -19,4 +19,5 @@ export interface StudyDraftLike {
   intro_en: string;
   intro_ar: string;
   close_at: string | null;
+  allow_changes?: boolean;
 }

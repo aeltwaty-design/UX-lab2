@@ -54,6 +54,8 @@ export interface Study {
   slack_channel_id: string | null;
   slack_ts: string | null;
   reminder_sent_at: string | null;
+  /** False: a member's first answer is final; later taps and submissions are refused. Not used by session recruitment. */
+  allow_changes: boolean;
   created_at: string;
   updated_at: string;
   /** From the study_stats view. */

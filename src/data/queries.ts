@@ -59,6 +59,7 @@ export interface StudyDraft {
   target: number | null;
   publish_at: string | null;
   close_at: string | null;
+  allow_changes: boolean;
 }
 
 /**
@@ -134,6 +135,7 @@ export async function updatePublishedStudy(draft: StudyDraft & { id: string }, q
     audience: draft.audience,
     audience_teams: draft.audience_teams,
     target: draft.target,
+    allow_changes: draft.allow_changes,
   };
   if (draft.status === "live") patch.close_at = draft.close_at;
   const up = await supabase.from("studies").update(patch).eq("id", draft.id);

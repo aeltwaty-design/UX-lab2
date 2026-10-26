@@ -133,6 +133,12 @@ export default function StudyResults() {
             <span>{typeLabel(study.type)}</span>
             <span>·</span>
             <span>{audienceLabel(study)}</span>
+            {!sessions && study.allow_changes === false && (
+              <>
+                <span>·</span>
+                <span>answers final</span>
+              </>
+            )}
             <span>·</span>
             <span className="tabular-nums">
               {fmtDate(study.published_at ?? study.publish_at)} → {fmtDate(study.closed_at ?? study.close_at)}
