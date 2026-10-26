@@ -73,7 +73,6 @@ export interface Participant {
   team: string | null;
   apps: string[];
   language: "en" | "ar";
-  sessions_ok: boolean;
   deleted_at: string | null;
 }
 

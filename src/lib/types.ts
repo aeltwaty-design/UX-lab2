@@ -76,7 +76,6 @@ export interface Participant {
   team: string | null;
   apps: string[];
   language: Lang;
-  sessions_ok: boolean;
   profile_at: string;
   updated_at: string;
   deleted_at: string | null;

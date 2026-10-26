@@ -56,8 +56,8 @@ export function studyBlocks(study: Study, settings: Settings, closed = false, an
 export function profilePromptBlocks(settings: Settings): Block[] {
   return [
     md(bi(
-      `*Before your first answer, fill in a short profile (one minute, once).*\nName, age band, gender and phone type (iPhone or Android). Every answer you give in ${settings.channel_name} is linked to it, so we can follow up and see how each group experiences the apps.`,
-      `*قبل أول إجابة، عبّئ ملفاً قصيراً (دقيقة واحدة، مرة واحدة).*\nالاسم والفئة العمرية والجنس ونوع الهاتف (آيفون أو أندرويد). كل إجابة تقدّمها مرتبطة به.`,
+      `*Before your first answer, fill in a short profile (one minute, once).*\nName, age band, gender, phone type, team and the apps you use; all fields are required. Every answer you give in ${settings.channel_name} is linked to it, so we can follow up and see how each group experiences the apps.`,
+      `*قبل أول إجابة، عبّئ ملفاً قصيراً (دقيقة واحدة، مرة واحدة).*\nالاسم والفئة العمرية والجنس ونوع الهاتف والفريق والتطبيقات؛ كل الحقول مطلوبة. كل إجابة تقدّمها مرتبطة به.`,
     )),
     {
       type: "actions",
@@ -75,10 +75,9 @@ export interface Pending {
   channel?: string;
 }
 
-const select = (block_id: string, label: string, options: { value: string; text: string }[], initial?: string, optional = false) => ({
+const select = (block_id: string, label: string, options: { value: string; text: string }[], initial?: string) => ({
   type: "input",
   block_id,
-  optional,
   label: pt(label),
   element: {
     type: "static_select",
@@ -98,7 +97,7 @@ export function profileModal(settings: Settings, prefillName: string, existing: 
     submit: pt("Save · حفظ"),
     close: pt("Cancel"),
     blocks: [
-      md(bi("Once only. Every answer you give is linked to this profile.", "مرة واحدة فقط. كل إجابة تقدّمها مرتبطة بهذا الملف.")),
+      md(bi("Once only. All fields are required. Every answer you give is linked to this profile.", "مرة واحدة فقط. كل الحقول مطلوبة. كل إجابة تقدّمها مرتبطة بهذا الملف.")),
       {
         type: "input",
         block_id: "name",
@@ -108,11 +107,10 @@ export function profileModal(settings: Settings, prefillName: string, existing: 
       select("age_band", "Age · العمر", AGE_BANDS.map((a) => ({ value: a, text: a })), existing?.age_band),
       select("gender", "Gender · الجنس", [{ value: "female", text: "Female · أنثى" }, { value: "male", text: "Male · ذكر" }], existing?.gender),
       select("device", "Phone type · نوع الهاتف", [{ value: "iphone", text: "iPhone" }, { value: "android", text: "Android" }], existing?.device),
-      select("team", "Team · الفريق", teams.map((t) => ({ value: t, text: t })), existing?.team ?? undefined, true),
+      select("team", "Team · الفريق", teams.map((t) => ({ value: t, text: t })), existing?.team ?? undefined),
       {
         type: "input",
         block_id: "apps",
-        optional: true,
         label: pt("Apps you use · التطبيقات"),
         element: {
           type: "checkboxes",
@@ -127,18 +125,6 @@ export function profileModal(settings: Settings, prefillName: string, existing: 
         },
       },
       select("language", "Language · اللغة", [{ value: "en", text: "English" }, { value: "ar", text: "العربية" }], existing?.language ?? settings.default_lang),
-      {
-        type: "input",
-        block_id: "sessions_ok",
-        optional: true,
-        label: pt("Sessions · الجلسات"),
-        element: {
-          type: "checkboxes",
-          action_id: "v",
-          options: [{ text: pt("Happy to join a 30-minute session · أرحّب بجلسة 30 دقيقة"), value: "yes" }],
-          ...(existing?.sessions_ok ? { initial_options: [{ text: pt("Happy to join a 30-minute session · أرحّب بجلسة 30 دقيقة"), value: "yes" }] } : {}),
-        },
-      },
     ],
   };
 }

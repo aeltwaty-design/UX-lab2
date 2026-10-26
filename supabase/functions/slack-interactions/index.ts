@@ -59,19 +59,14 @@ function readProfile(values: Record<string, SurveyValues>) {
   if (!gender) errors.gender = "Pick one.";
   const device = v("device")?.selected_option?.value;
   if (!device) errors.device = "Pick your phone type.";
+  const team = v("team")?.selected_option?.value;
+  if (!team) errors.team = "Pick your team.";
+  const apps = (v("apps")?.selected_options ?? []).map((o) => o.value);
+  if (!apps.length) errors.apps = "Tick at least one app.";
+  const language = v("language")?.selected_option?.value;
+  if (!language) errors.language = "Pick a language.";
   if (Object.keys(errors).length) return { errors };
-  return {
-    row: {
-      name,
-      age_band,
-      gender,
-      device,
-      team: v("team")?.selected_option?.value ?? null,
-      apps: (v("apps")?.selected_options ?? []).map((o) => o.value),
-      language: v("language")?.selected_option?.value ?? "en",
-      sessions_ok: (v("sessions_ok")?.selected_options ?? []).length > 0,
-    },
-  };
+  return { row: { name, age_band, gender, device, team, apps, language } };
 }
 
 Deno.serve(async (req) => {

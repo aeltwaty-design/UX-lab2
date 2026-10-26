@@ -41,7 +41,6 @@ export default function Participants() {
     return {
       size: p.length,
       missing: missing.length,
-      sessions: p.filter((x) => x.sessions_ok).length,
       month: p.filter((x) => new Date(x.profile_at).getTime() > monthAgo).length,
       missingNames: missing.map((m) => m.name),
     };
@@ -109,10 +108,9 @@ export default function Participants() {
         }
       />
       <div className="px-7 pb-10 space-y-4">
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <StatTile label="With a profile" value={stats.size} tone="brand" sub={`of ${members.length || "?"} channel members`} />
           <StatTile label="Missing a profile" value={stats.missing} tone={stats.missing ? "warn" : "default"} sub="cannot answer until they fill it in" />
-          <StatTile label="OK for sessions" value={stats.sessions} sub="said yes to a 30-minute call" />
           <StatTile label="Joined last 30 days" value={stats.month} tone="one" sub="profiles completed" />
         </div>
 
@@ -153,11 +151,11 @@ export default function Participants() {
         </div>
 
         <Card title={`Members (${visible.length})`} action={<Input className="w-64 h-8" placeholder="Search name, team, device" value={q} onChange={(e) => setQ(e.target.value)} />} pad={false}>
-          <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_70px_70px_80px_110px_60px_70px_90px_80px] gap-2 px-4 h-8 items-center text-[11px] font-semibold uppercase tracking-[0.04em] text-muted bg-fill border-b border-line-2">
-            <div>Name</div><div>Team</div><div>Age</div><div>Gender</div><div>Device</div><div>Apps</div><div>Lang</div><div>Session</div><div>Profile</div><div className="text-right">Answers</div>
+          <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_70px_70px_80px_110px_60px_90px_80px] gap-2 px-4 h-8 items-center text-[11px] font-semibold uppercase tracking-[0.04em] text-muted bg-fill border-b border-line-2">
+            <div>Name</div><div>Team</div><div>Age</div><div>Gender</div><div>Device</div><div>Apps</div><div>Lang</div><div>Profile</div><div className="text-right">Answers</div>
           </div>
           {visible.map((p) => (
-            <div key={p.id} className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_70px_70px_80px_110px_60px_70px_90px_80px] gap-2 px-4 py-2 items-center text-[12.5px] border-b border-line-2 last:border-b-0 group">
+            <div key={p.id} className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_70px_70px_80px_110px_60px_90px_80px] gap-2 px-4 py-2 items-center text-[12.5px] border-b border-line-2 last:border-b-0 group">
               <div className="text-ink truncate flex items-center gap-2">
                 {p.name}
                 <button
@@ -185,7 +183,6 @@ export default function Participants() {
                 ))}
               </div>
               <div className="text-ink-2 uppercase">{p.language}</div>
-              <div className="text-ink-2">{p.sessions_ok ? "Yes" : "—"}</div>
               <div className="text-muted tabular-nums">{fmtDate(p.profile_at)}</div>
               <div className="text-ink text-right tabular-nums">{counts[p.id] ?? 0}</div>
             </div>
