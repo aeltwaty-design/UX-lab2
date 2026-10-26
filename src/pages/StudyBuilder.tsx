@@ -11,13 +11,14 @@ import { Spinner } from "@/components/ui/Empty";
 import { Icon } from "@/components/Icon";
 import { ConfirmDialog } from "@/components/ui/Dialog";
 import { useToast } from "@/components/ui/Toast";
-import { getSettings, getStudy, runAdminAction, saveStudy, uploadStudyImage, type StudyDraft } from "@/data/queries";
+import { getSettings, getStudy, listBookings, runAdminAction, saveStudy, updatePublishedStudy, uploadStudyImage, type StudyDraft } from "@/data/queries";
 import { runChecks } from "@/lib/checks";
 import { fmtSlot, fromLocalInput, toLocalInput } from "@/lib/format";
 import type { SlotDraft } from "@/lib/preview";
 import {
   DEFAULT_SETTINGS,
   QUESTION_KINDS,
+  STATUS_LABEL,
   STUDY_TYPES,
   type Option,
   type Question,
@@ -161,16 +162,18 @@ export default function StudyBuilder() {
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [uploading, setUploading] = useState<string[]>([]);
+  /** Active bookings per slot, for studies already in the channel. */
+  const [bookedBySlot, setBookedBySlot] = useState<Record<string, number>>({});
 
   useEffect(() => {
     getSettings().then(setSettings).catch(() => {});
     if (!id) return;
     getStudy(id)
-      .then((s) => {
-        if (s.status !== "draft" && s.status !== "scheduled") {
-          toast("Live and closed studies cannot be edited. Showing results instead.");
-          nav(`/studies/${s.id}`, { replace: true });
-          return;
+      .then(async (s) => {
+        if (s.type === "session_recruitment" && s.status !== "draft" && s.status !== "scheduled") {
+          const counts: Record<string, number> = {};
+          for (const b of await listBookings(s.id)) counts[b.slot_id] = (counts[b.slot_id] ?? 0) + 1;
+          setBookedBySlot(counts);
         }
         setDraft({
           id: s.id,
@@ -192,9 +195,11 @@ export default function StudyBuilder() {
       .catch((e: Error) => toast(e.message, "error"));
   }, [id, nav, toast]);
 
+  /** Already in the channel: wording, audience and slots can change; the structure answers point at cannot. */
+  const locked = Boolean(draft && draft.status !== "draft" && draft.status !== "scheduled");
   const checks = useMemo(
-    () => (draft ? runChecks(draft as unknown as Study, questions, slots) : []),
-    [draft, questions, slots],
+    () => (draft ? runChecks(draft as unknown as Study, questions, slots, { published: locked }) : []),
+    [draft, questions, slots, locked],
   );
   const hasErrors = checks.some((c) => c.level === "error");
 
@@ -294,33 +299,57 @@ export default function StudyBuilder() {
       nav("/studies");
     });
 
+  const saveChanges = () =>
+    act("save", async () => {
+      if (hasErrors) throw new Error("Fix the errors in the checks panel first.");
+      await updatePublishedStudy({ ...draft, id: draft.id! }, questions, slots);
+      const r = await runAdminAction({ action: "refresh_post", study_id: draft.id! });
+      toast(r.message, r.ok ? "ok" : "error");
+      nav(`/studies/${draft.id}`);
+    });
+
   const isPoll = draft.type === "poll";
   const isPreference = draft.type === "preference_test";
   const isSessions = draft.type === "session_recruitment";
   const singleQuestion = isPoll || isPreference;
+  /** Closed or reported: the round is over, so dates and slots are history. */
+  const closedLocked = locked && draft.status !== "live";
+  const slotCols = locked
+    ? "grid-cols-[minmax(0,1.5fr)_110px_minmax(0,1.2fr)_90px_60px_28px]"
+    : "grid-cols-[minmax(0,1.5fr)_110px_minmax(0,1.2fr)_90px_28px]";
 
   return (
     <>
       <PageHeader
         title={id ? `Edit: ${draft.title_en || "Untitled"}` : "New study"}
-        back={{ to: "/studies", label: "Studies" }}
+        back={locked ? { to: `/studies/${draft.id}`, label: "Study" } : { to: "/studies", label: "Studies" }}
         sub={
           <span className="flex items-center gap-2">
-            <Chip tone={draft.status}>{draft.status === "scheduled" ? "Scheduled" : "Draft"}</Chip>
-            Nothing reaches Slack until you schedule or publish.
+            <Chip tone={draft.status}>{STATUS_LABEL[draft.status]}</Chip>
+            {locked
+              ? draft.status === "live"
+                ? `Live in ${settings.channel_name}. Wording, audience, target, close date and slots can change; questions keep their structure so answers stay valid. Saving updates the post.`
+                : "Closed. Wording, audience and target can change. Saving updates the post."
+              : "Nothing reaches Slack until you schedule or publish."}
           </span>
         }
         actions={
-          <>
-            {draft.id && (
-              <Button variant="danger" icon="trash" loading={busy === "delete"} onClick={() => setConfirmDelete(true)}>
-                Delete
-              </Button>
-            )}
-            <Button loading={busy === "draft"} onClick={saveDraft}>Save draft</Button>
-            <Button icon="clock" loading={busy === "schedule"} disabled={hasErrors} onClick={schedule}>Schedule</Button>
-            <Button variant="primary" icon="send" loading={busy === "publish"} disabled={hasErrors} onClick={publishNow}>Publish now</Button>
-          </>
+          locked ? (
+            <Button variant="primary" icon="check" loading={busy === "save"} disabled={hasErrors} onClick={saveChanges}>
+              Save changes
+            </Button>
+          ) : (
+            <>
+              {draft.id && (
+                <Button variant="danger" icon="trash" loading={busy === "delete"} onClick={() => setConfirmDelete(true)}>
+                  Delete
+                </Button>
+              )}
+              <Button loading={busy === "draft"} onClick={saveDraft}>Save draft</Button>
+              <Button icon="clock" loading={busy === "schedule"} disabled={hasErrors} onClick={schedule}>Schedule</Button>
+              <Button variant="primary" icon="send" loading={busy === "publish"} disabled={hasErrors} onClick={publishNow}>Publish now</Button>
+            </>
+          )
         }
       />
 
@@ -339,6 +368,12 @@ export default function StudyBuilder() {
       <div className="px-7 pb-10 grid grid-cols-[minmax(0,1fr)_400px] gap-4 items-start">
         <div className="space-y-4">
           <Card title="Type">
+            {locked ? (
+              <div className="text-[13px] text-ink">
+                {STUDY_TYPES.find((t) => t.value === draft.type)?.label ?? draft.type}
+                <span className="text-muted"> · fixed once posted</span>
+              </div>
+            ) : (
             <div className="grid grid-cols-4 gap-2">
               {STUDY_TYPES.map((t) => (
                 <button
@@ -355,6 +390,7 @@ export default function StudyBuilder() {
                 </button>
               ))}
             </div>
+            )}
             {!id && (
               <div className="flex items-center gap-2 mt-3 text-[12px] text-muted flex-wrap">
                 Start from:
@@ -402,7 +438,7 @@ export default function StudyBuilder() {
             <Card
               title={`Session slots (${slots.length})`}
               action={
-                <Button size="sm" icon="plus" disabled={slots.length >= 40} onClick={() => setSlots([...slots, nextSlot(slots, draft.publish_at)])}>
+                <Button size="sm" icon="plus" disabled={slots.length >= 40 || closedLocked} onClick={() => setSlots([...slots, nextSlot(slots, draft.publish_at)])}>
                   Add slot
                 </Button>
               }
@@ -411,31 +447,39 @@ export default function StudyBuilder() {
                 <div className="text-[13px] text-muted">No slots yet. Each slot is one time, one place and how many people can book it.</div>
               ) : (
                 <div className="space-y-2">
-                  <div className="grid grid-cols-[minmax(0,1.5fr)_110px_minmax(0,1.2fr)_90px_28px] gap-2 text-[11.5px] font-semibold uppercase tracking-[0.04em] text-muted">
-                    <div>Starts (your local time)</div><div>Length</div><div>Place or link</div><div>Seats</div><div />
+                  <div className={clsx("grid gap-2 text-[11.5px] font-semibold uppercase tracking-[0.04em] text-muted", slotCols)}>
+                    <div>Starts (your local time)</div><div>Length</div><div>Place or link</div><div>Seats</div>{locked && <div>Booked</div>}<div />
                   </div>
-                  {slots.map((s, i) => (
-                    <div key={s.id} className="grid grid-cols-[minmax(0,1.5fr)_110px_minmax(0,1.2fr)_90px_28px] gap-2 items-center">
-                      <Input type="datetime-local" value={toLocalInput(s.starts_at)} onChange={(e) => setSlot(i, { starts_at: fromLocalInput(e.target.value) ?? s.starts_at })} />
-                      <Select value={s.minutes} onChange={(e) => setSlot(i, { minutes: Number(e.target.value) })}>
-                        {MINUTES.map((m) => (
-                          <option key={m} value={m}>{m} min</option>
-                        ))}
-                      </Select>
-                      <Input value={s.place} onChange={(e) => setSlot(i, { place: e.target.value })} placeholder="Meeting room 2, or a Meet link" />
-                      <Input type="number" min={1} max={20} value={s.capacity} onChange={(e) => setSlot(i, { capacity: Math.min(20, Math.max(1, Number(e.target.value) || 1)) })} />
-                      <button
-                        type="button"
-                        className="h-7 w-7 grid place-items-center text-muted hover:text-danger cursor-pointer"
-                        onClick={() => setSlots(slots.filter((_, si) => si !== i))}
-                        aria-label="Remove slot"
-                      >
-                        <Icon name="x" size={14} />
-                      </button>
-                    </div>
-                  ))}
+                  {slots.map((s, i) => {
+                    const booked = bookedBySlot[s.id] ?? 0;
+                    const fixed = closedLocked || (locked && booked > 0);
+                    return (
+                      <div key={s.id} className={clsx("grid gap-2 items-center", slotCols)}>
+                        <Input type="datetime-local" disabled={fixed} value={toLocalInput(s.starts_at)} onChange={(e) => setSlot(i, { starts_at: fromLocalInput(e.target.value) ?? s.starts_at })} />
+                        <Select disabled={fixed} value={s.minutes} onChange={(e) => setSlot(i, { minutes: Number(e.target.value) })}>
+                          {MINUTES.map((m) => (
+                            <option key={m} value={m}>{m} min</option>
+                          ))}
+                        </Select>
+                        <Input disabled={closedLocked} value={s.place} onChange={(e) => setSlot(i, { place: e.target.value })} placeholder="Meeting room 2, or a Meet link" />
+                        <Input type="number" disabled={closedLocked} min={Math.max(1, booked)} max={20} value={s.capacity} onChange={(e) => setSlot(i, { capacity: Math.min(20, Math.max(1, booked, Number(e.target.value) || 1)) })} />
+                        {locked && <div className="text-[12.5px] text-ink-2 tabular-nums">{booked}</div>}
+                        <button
+                          type="button"
+                          className="h-7 w-7 grid place-items-center text-muted hover:text-danger cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                          disabled={fixed}
+                          title={locked && booked > 0 ? "A booked slot stays; members cancel from their DM." : undefined}
+                          onClick={() => setSlots(slots.filter((_, si) => si !== i))}
+                          aria-label="Remove slot"
+                        >
+                          <Icon name="x" size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
                   <div className="text-[12px] text-muted pt-1">
                     The channel reads slots in Riyadh time: {slots[0] ? fmtSlot(slots[0].starts_at, slots[0].minutes) : ""}. One active booking per person per study; a member who picks again is moved. The weekly cap of {settings.hours_cap} research hours per member applies.
+                    {locked && !closedLocked && " Booked slots keep their time and length; add seats or new slots to open more room."}
                   </div>
                 </div>
               )}
@@ -444,7 +488,7 @@ export default function StudyBuilder() {
             <Card
               title={isPoll ? "The question" : isPreference ? "The question and its images" : `Questions (${questions.length} of 8)`}
               action={
-                !singleQuestion && (
+                !locked && !singleQuestion && (
                   <Button size="sm" icon="plus" disabled={questions.length >= 8} onClick={() => setQuestions([...questions, newQuestion(questions.length)])}>
                     Add question
                   </Button>
@@ -457,14 +501,14 @@ export default function StudyBuilder() {
                     {!isPreference && (
                       <div className="flex items-center gap-2 mb-2">
                         <span className="h-6 w-6 rounded-full bg-ink text-white text-[11.5px] font-semibold grid place-items-center">{qi + 1}</span>
-                        <Select className="w-40" value={q.kind} onChange={(e) => changeKind(qi, e.target.value as QuestionKind)}>
+                        <Select className="w-40" disabled={locked} value={q.kind} onChange={(e) => changeKind(qi, e.target.value as QuestionKind)}>
                           {QUESTION_KINDS.map((k) => (
                             <option key={k.value} value={k.value}>{k.label}</option>
                           ))}
                         </Select>
                         <div className="flex-1" />
                         <Toggle checked={q.required} onChange={(v) => setQ(qi, { required: v })} label={<span className="text-[12px]">Required</span>} />
-                        {!isPoll && questions.length > 1 && (
+                        {!locked && !isPoll && questions.length > 1 && (
                           <Button size="sm" variant="ghost" icon="trash" onClick={() => setQuestions(questions.filter((_, i) => i !== qi))} />
                         )}
                       </div>
@@ -482,7 +526,8 @@ export default function StudyBuilder() {
                             <div key={o.id} className="grid grid-cols-[128px_minmax(0,1fr)_minmax(0,1fr)_28px] gap-2 items-center">
                               <label
                                 className={clsx(
-                                  "relative h-24 rounded-sm border overflow-hidden grid place-items-center cursor-pointer text-[11.5px] text-muted text-center",
+                                  "relative h-24 rounded-sm border overflow-hidden grid place-items-center text-[11.5px] text-muted text-center",
+                                  locked ? "cursor-default" : "cursor-pointer",
                                   o.image_url ? "border-line bg-fill" : "border-dashed border-line bg-white hover:bg-fill",
                                 )}
                               >
@@ -494,17 +539,17 @@ export default function StudyBuilder() {
                                   <span className="px-2">Upload image<br />PNG, JPEG, WebP · 5 MB</span>
                                 )}
                                 {o.image_url && busyUpload && <span className="absolute inset-0 bg-white/70 grid place-items-center"><span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-muted border-t-transparent animate-spin" /></span>}
-                                <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="sr-only" onChange={(e) => void pickImage(qi, oi, e.target.files?.[0])} />
+                                <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="sr-only" disabled={locked} onChange={(e) => void pickImage(qi, oi, e.target.files?.[0])} />
                               </label>
                               <div className="space-y-1.5">
                                 <Input value={o.label_en} onChange={(e) => setOpt(qi, oi, { label_en: e.target.value })} placeholder={`Label, e.g. ${String.fromCharCode(65 + oi)}`} />
-                                <div className="text-[11.5px] text-muted">{o.image_url ? "Shown under the image and on its button." : "Add the image first."}</div>
+                                <div className="text-[11.5px] text-muted">{locked ? "The image is fixed once posted; the label can change." : o.image_url ? "Shown under the image and on its button." : "Add the image first."}</div>
                               </div>
                               <Input className="ar self-start" value={o.label_ar} onChange={(e) => setOpt(qi, oi, { label_ar: e.target.value })} placeholder="التسمية" />
                               <button
                                 type="button"
                                 className="h-7 w-7 grid place-items-center text-muted hover:text-danger cursor-pointer disabled:opacity-30 self-start"
-                                disabled={q.options.length <= 2}
+                                disabled={locked || q.options.length <= 2}
                                 onClick={() => setQ(qi, { options: q.options.filter((_, i) => i !== oi) })}
                                 aria-label="Remove image"
                               >
@@ -513,9 +558,11 @@ export default function StudyBuilder() {
                             </div>
                           );
                         })}
-                        <Button size="sm" variant="ghost" icon="plus" disabled={q.options.length >= 6} onClick={() => setQ(qi, { options: [...q.options, newOption(q.id, q.options.length)] })}>
-                          Add image
-                        </Button>
+                        {!locked && (
+                          <Button size="sm" variant="ghost" icon="plus" disabled={q.options.length >= 6} onClick={() => setQ(qi, { options: [...q.options, newOption(q.id, q.options.length)] })}>
+                            Add image
+                          </Button>
+                        )}
                         <div className="text-[12px] text-muted">Two to six images. Members tap one button and can change their pick until the study closes. Keep every image the same size, or the post looks uneven.</div>
                       </div>
                     ) : (
@@ -528,7 +575,7 @@ export default function StudyBuilder() {
                               <button
                                 type="button"
                                 className="h-7 w-7 grid place-items-center text-muted hover:text-danger cursor-pointer disabled:opacity-30"
-                                disabled={q.options.length <= 2}
+                                disabled={locked || q.options.length <= 2}
                                 onClick={() => setQ(qi, { options: q.options.filter((_, i) => i !== oi) })}
                                 aria-label="Remove option"
                               >
@@ -536,9 +583,11 @@ export default function StudyBuilder() {
                               </button>
                             </div>
                           ))}
-                          <Button size="sm" variant="ghost" icon="plus" disabled={q.options.length >= 10} onClick={() => setQ(qi, { options: [...q.options, newOption(q.id, q.options.length)] })}>
-                            Add option
-                          </Button>
+                          {!locked && (
+                            <Button size="sm" variant="ghost" icon="plus" disabled={q.options.length >= 10} onClick={() => setQ(qi, { options: [...q.options, newOption(q.id, q.options.length)] })}>
+                              Add option
+                            </Button>
+                          )}
                         </div>
                       )
                     )}
@@ -588,11 +637,11 @@ export default function StudyBuilder() {
               )}
               <div>
                 <Label>Publish</Label>
-                <Input type="datetime-local" value={toLocalInput(draft.publish_at)} onChange={(e) => set("publish_at", fromLocalInput(e.target.value))} />
+                <Input type="datetime-local" disabled={locked} value={toLocalInput(draft.publish_at)} onChange={(e) => set("publish_at", fromLocalInput(e.target.value))} />
               </div>
               <div>
                 <Label>Close</Label>
-                <Input type="datetime-local" value={toLocalInput(draft.close_at)} onChange={(e) => set("close_at", fromLocalInput(e.target.value))} />
+                <Input type="datetime-local" disabled={closedLocked} value={toLocalInput(draft.close_at)} onChange={(e) => set("close_at", fromLocalInput(e.target.value))} />
               </div>
               <div className="text-[12px] text-muted self-end pb-2">
                 {isSessions ? "A reminder goes by DM to members without a booking a day before close, and to everyone booked a day before their slot." : "A reminder goes by DM to non-responders a day before close."}
@@ -606,9 +655,9 @@ export default function StudyBuilder() {
             <Label>Slack preview</Label>
             <SlackPreview study={draft} questions={questions} slots={slots} channel={settings.channel_name} />
           </div>
-          <Card title="Checks before posting">
+          <Card title={locked ? "Checks before saving" : "Checks before posting"}>
             {checks.length === 0 ? (
-              <div className="flex items-center gap-2 text-[13px] text-brand-text"><Icon name="check" /> Ready to post.</div>
+              <div className="flex items-center gap-2 text-[13px] text-brand-text"><Icon name="check" /> {locked ? "Ready to save." : "Ready to post."}</div>
             ) : (
               <ul className="space-y-1.5">
                 {checks.map((c, i) => (

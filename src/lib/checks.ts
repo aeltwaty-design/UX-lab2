@@ -15,7 +15,8 @@ export interface Check {
 }
 
 /** Pre-flight checks shown in the builder. Errors block publishing. */
-export function runChecks(study: Study | StudyWithQuestions, questions: Question[], slots: SlotDraft[] = []): Check[] {
+/** `published`: the study is already in the channel, so slots that have already happened are not errors (new slots still are). */
+export function runChecks(study: Study | StudyWithQuestions, questions: Question[], slots: SlotDraft[] = [], opts: { published?: boolean } = {}): Check[] {
   const out: Check[] = [];
   const texts = [study.title_en, study.title_ar, study.intro_en, study.intro_ar];
   if (!study.title_en.trim()) out.push({ level: "error", text: "English title is empty." });
@@ -28,7 +29,7 @@ export function runChecks(study: Study | StudyWithQuestions, questions: Question
     slots.forEach((s, i) => {
       const t = new Date(s.starts_at).getTime();
       if (Number.isNaN(t)) out.push({ level: "error", text: `Slot ${i + 1} has no date.` });
-      else if (t < now) out.push({ level: "error", text: `Slot ${i + 1} is in the past.` });
+      else if (t < now && (!opts.published || s.id.startsWith("tmp-"))) out.push({ level: "error", text: `Slot ${i + 1} is in the past.` });
       if (study.close_at && !Number.isNaN(t) && t < new Date(study.close_at).getTime())
         out.push({ level: "warn", text: `Slot ${i + 1} starts before the round closes; bookings stop when the slot starts.` });
       texts.push(s.place);

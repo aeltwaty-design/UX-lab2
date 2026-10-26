@@ -268,6 +268,24 @@ export async function deleteStudy(id: string, removePosts: boolean): Promise<Out
   return { ok: true, message: `Study deleted${notes.length ? ` (${notes.join(", ")})` : ""}.` };
 }
 
+/** Re-renders the study's channel post after an edit in the dashboard. Closed and reported studies keep their closed state. */
+export async function refreshStudyPost(id: string): Promise<Outcome> {
+  const [study, settings] = await Promise.all([getStudy(id), getSettings()]);
+  if (!study.slack_channel_id || !study.slack_ts) return { ok: true, message: "Saved." };
+  const sessions = study.type === "session_recruitment";
+  const closed = study.status !== "live";
+  const slots = sessions ? await getSlots(id) : [];
+  const answered = closed ? (sessions ? slots.reduce((n, s) => n + s.booked, 0) : await countResponses(id)) : 0;
+  const text = closed ? `${study.title_en} · closed` : `${study.title_en}${study.title_ar ? ` · ${study.title_ar}` : ""}`;
+  try {
+    await updateMessage(study.slack_channel_id, study.slack_ts, text, studyBlocks(study, settings, closed, answered, slots));
+  } catch (e) {
+    const code = e instanceof SlackError ? e.code : (e as Error).message;
+    return { ok: false, message: `Saved, but the post in ${settings.channel_name} was not updated (${code}).` };
+  }
+  return { ok: true, message: `Saved. The post in ${settings.channel_name} is updated.` };
+}
+
 export async function testSlack(): Promise<Outcome> {
   const settings = await getSettings();
   try {

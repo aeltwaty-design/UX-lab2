@@ -2,7 +2,7 @@
 // The caller must be a signed-in admin (Supabase Auth JWT + admins table).
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { db } from "../_shared/db.ts";
-import { closeStudy, deletePost, deleteStudy, dmParticipant, frictionDigest, postFrictionPrompt, postResults, publishStudy, remindMissingProfiles, remindStudy, repostProfile, sessionReminders, syncMembers, testSlack, type Outcome } from "../_shared/actions.ts";
+import { closeStudy, deletePost, deleteStudy, dmParticipant, frictionDigest, postFrictionPrompt, postResults, publishStudy, refreshStudyPost, remindMissingProfiles, remindStudy, repostProfile, sessionReminders, syncMembers, testSlack, type Outcome } from "../_shared/actions.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -61,6 +61,8 @@ Deno.serve(async (req) => {
         return reply(await deletePost(body.link ?? ""));
       case "delete_study":
         return reply(await deleteStudy(id, body.remove_posts === true));
+      case "refresh_post":
+        return reply(await refreshStudyPost(id));
       case "post_friction_prompt":
         return reply(await postFrictionPrompt());
       case "friction_digest":

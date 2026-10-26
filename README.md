@@ -21,6 +21,7 @@ Slack is the front door. This app is the back office. Colleagues never sign in t
 - **Never asked.** The builder refuses a study that mentions PIN, OTP, card or password, in English or Arabic.
 - **Not reported until posted.** A study moves to Reported only when its results post has gone to the channel.
 - **One answer per member per study**, changeable until the study closes.
+- **Edit after posting.** A live, closed or reported study still opens in the editor, in a limited mode: wording, audience and target can change, plus the close date and the session slots while it is live (a booked slot keeps its time, and a slot with bookings cannot be removed). Questions and options are updated in place, so collected answers stay valid; the type, question kinds, option counts and images are fixed once posted. Saving re-renders the bot's post in the channel.
 - **Closed before deleted.** A live study cannot be deleted, from the dashboard or straight in the database. Close it, and Delete on the study page removes the study, its answers or bookings and its images, and by default the bot's posts for it in the channel. Drafts and scheduled studies can be deleted from the editor, since nothing of theirs reached Slack.
 
 ## Set-up, in order

@@ -119,6 +119,61 @@ export async function saveStudy(draft: StudyDraft, questions: Question[], slots:
   return id;
 }
 
+/**
+ * Saves edits to a study that is already in the channel (live, closed or reported) without touching the ids that
+ * answers and bookings point at: the study's words, audience, target and (while live) close date; question and option
+ * wording in place; for session recruitment, slot details, new slots, and the removal of slots nobody booked.
+ * Type, status, publish date, question kinds and option counts stay as they are.
+ */
+export async function updatePublishedStudy(draft: StudyDraft & { id: string }, questions: Question[], slots: SlotDraft[] = []): Promise<void> {
+  const patch: Record<string, unknown> = {
+    title_en: draft.title_en,
+    title_ar: draft.title_ar,
+    intro_en: draft.intro_en,
+    intro_ar: draft.intro_ar,
+    audience: draft.audience,
+    audience_teams: draft.audience_teams,
+    target: draft.target,
+  };
+  if (draft.status === "live") patch.close_at = draft.close_at;
+  const up = await supabase.from("studies").update(patch).eq("id", draft.id);
+  if (up.error) fail(up.error);
+
+  for (const q of questions) {
+    if (q.id.startsWith("tmp-")) continue;
+    const qu = await supabase.from("questions").update({ text_en: q.text_en, text_ar: q.text_ar, required: q.required }).eq("id", q.id);
+    if (qu.error) fail(qu.error);
+    for (const o of q.options) {
+      if (o.id.startsWith("tmp-")) continue;
+      const ou = await supabase.from("options").update({ label_en: o.label_en, label_ar: o.label_ar }).eq("id", o.id);
+      if (ou.error) fail(ou.error);
+    }
+  }
+
+  if (draft.type === "session_recruitment") {
+    const { data: existing, error } = await supabase.from("session_slots").select("id").eq("study_id", draft.id);
+    if (error) fail(error);
+    const keep = new Set(slots.map((s) => s.id));
+    const gone = ((existing ?? []) as { id: string }[]).map((r) => r.id).filter((sid) => !keep.has(sid));
+    if (gone.length) {
+      // Deleting a slot would cascade to its bookings, so a booked slot stays.
+      const { count, error: e2 } = await supabase.from("session_bookings").select("id", { count: "exact", head: true }).in("slot_id", gone).is("cancelled_at", null);
+      if (e2) fail(e2);
+      if (count) throw new Error("A slot you removed has bookings. Keep it; members can cancel from their DM.");
+      const del = await supabase.from("session_slots").delete().in("id", gone);
+      if (del.error) fail(del.error);
+    }
+    const sorted = [...slots].sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+    for (const [i, s] of sorted.entries()) {
+      const row = { position: i, starts_at: s.starts_at, minutes: s.minutes, place: s.place.trim(), capacity: s.capacity };
+      const r = s.id.startsWith("tmp-")
+        ? await supabase.from("session_slots").insert({ ...row, study_id: draft.id })
+        : await supabase.from("session_slots").update(row).eq("id", s.id);
+      if (r.error) fail(r.error);
+    }
+  }
+}
+
 /** Uploads a preference-test image to the public study-images bucket and returns its URL. */
 export async function uploadStudyImage(file: File): Promise<string> {
   if (!/^image\/(png|jpeg|gif|webp)$/.test(file.type)) throw new Error("Use a PNG, JPEG, GIF or WebP image.");
@@ -274,6 +329,7 @@ export type AdminAction =
   | { action: "test_slack" }
   | { action: "delete_post"; link: string }
   | { action: "delete_study"; study_id: string; remove_posts: boolean }
+  | { action: "refresh_post"; study_id: string }
   | { action: "post_friction_prompt" }
   | { action: "friction_digest" }
   | { action: "session_reminders" }

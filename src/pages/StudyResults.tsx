@@ -152,11 +152,9 @@ export default function StudyResults() {
                 Delete
               </Button>
             )}
+            <Button onClick={() => nav(`/studies/${id}/edit`)}>Edit</Button>
             {(study.status === "draft" || study.status === "scheduled") && (
-              <>
-                <Button onClick={() => nav(`/studies/${id}/edit`)}>Edit</Button>
-                <Button variant="primary" icon="send" loading={busy === "publish_now"} onClick={slack("publish_now")}>Publish now</Button>
-              </>
+              <Button variant="primary" icon="send" loading={busy === "publish_now"} onClick={slack("publish_now")}>Publish now</Button>
             )}
             {isLive && (
               <>
