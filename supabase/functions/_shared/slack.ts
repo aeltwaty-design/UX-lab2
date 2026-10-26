@@ -12,10 +12,17 @@ export class SlackError extends Error {
 }
 
 export async function slack<T = Record<string, unknown>>(method: string, body: Record<string, unknown>): Promise<T> {
+  // Form-encoded, like Slack's own SDK: the read methods (users.info, users.list, conversations.members,
+  // chat.getPermalink) reject JSON bodies with invalid_arguments. Nested values travel as JSON strings.
+  const form = new URLSearchParams();
+  for (const [k, v] of Object.entries(body)) {
+    if (v === undefined || v === null) continue;
+    form.set(k, typeof v === "object" ? JSON.stringify(v) : String(v));
+  }
   const res = await fetch(`https://slack.com/api/${method}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json; charset=utf-8", Authorization: `Bearer ${TOKEN}` },
-    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/x-www-form-urlencoded; charset=utf-8", Authorization: `Bearer ${TOKEN}` },
+    body: form.toString(),
   });
   const json = (await res.json()) as { ok: boolean; error?: string } & T;
   if (!json.ok) throw new SlackError(method, json.error ?? "unknown_error");

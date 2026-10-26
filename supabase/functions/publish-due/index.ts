@@ -21,18 +21,22 @@ Deno.serve(async (req) => {
   const settings = await getSettings();
   if (!settings.channel_id) return Response.json({ ok: false, message: "channel_id not set" });
 
+  // Each step runs on its own, so one Slack refusal does not stop the others.
+  const attempt = async (label: string, fn: () => Promise<{ message: string }>) => {
+    try {
+      log.push(`${label}: ${(await fn()).message}`);
+    } catch (e) {
+      console.error("publish-due", label, e);
+      log.push(`${label} error: ${(e as Error).message}`);
+    }
+  };
+
   try {
     const { data: due } = await db.from("studies").select("id, title_en").eq("status", "scheduled").lte("publish_at", now.toISOString());
-    for (const s of (due ?? []) as { id: string; title_en: string }[]) {
-      const r = await publishStudy(s.id);
-      log.push(`publish ${s.title_en}: ${r.message}`);
-    }
+    for (const s of (due ?? []) as { id: string; title_en: string }[]) await attempt(`publish ${s.title_en}`, () => publishStudy(s.id));
 
     const { data: closing } = await db.from("studies").select("id, title_en").eq("status", "live").lte("close_at", now.toISOString());
-    for (const s of (closing ?? []) as { id: string; title_en: string }[]) {
-      const r = await closeStudy(s.id);
-      log.push(`close ${s.title_en}: ${r.message}`);
-    }
+    for (const s of (closing ?? []) as { id: string; title_en: string }[]) await attempt(`close ${s.title_en}`, () => closeStudy(s.id));
 
     const dayAhead = new Date(now.getTime() + 24 * 3600_000).toISOString();
     const { data: reminders } = await db
@@ -42,16 +46,10 @@ Deno.serve(async (req) => {
       .is("reminder_sent_at", null)
       .lte("close_at", dayAhead)
       .gt("close_at", now.toISOString());
-    for (const s of (reminders ?? []) as { id: string; title_en: string }[]) {
-      const r = await remindStudy(s.id);
-      log.push(`remind ${s.title_en}: ${r.message}`);
-    }
+    for (const s of (reminders ?? []) as { id: string; title_en: string }[]) await attempt(`remind ${s.title_en}`, () => remindStudy(s.id));
 
     const lastSync = settings.members_synced_at ? new Date(settings.members_synced_at).getTime() : 0;
-    if (now.getTime() - lastSync > 3600_000) {
-      const r = await syncMembers();
-      log.push(`sync: ${r.message}`);
-    }
+    if (now.getTime() - lastSync > 3600_000) await attempt("sync", syncMembers);
 
     const { count } = await db.from("studies").select("id", { count: "exact", head: true }).eq("status", "live");
     if ((count ?? 0) > 0) {
