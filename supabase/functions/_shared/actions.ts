@@ -1,5 +1,5 @@
 // The operations behind every Slack-facing button, shared by the four functions.
-import { channelMemberIds, deleteMessage, displayName, dm, listUsers, permalink, pin, postEphemeral, postMessage, slack, SlackError, sleep, updateMessage } from "./slack.ts";
+import { channelMemberIds, deleteMessage, displayName, dm, listUsers, permalink, pin, postEphemeral, postMessage, slack, SlackError, sleep, updateMessage, userInfo } from "./slack.ts";
 import { countResponses, db, getSettings, getStudy, setSetting, snapshot, type Participant, type Settings, type Study } from "./db.ts";
 import { profilePromptBlocks, resultsBlocks, studyBlocks, totalsText } from "./blocks.ts";
 
@@ -225,9 +225,16 @@ export async function deletePost(link: string): Promise<Outcome> {
 export async function testSlack(): Promise<Outcome> {
   const settings = await getSettings();
   try {
-    const r = await slack<{ team: string; user: string }>("auth.test", {});
+    const r = await slack<{ team: string; user: string; user_id: string }>("auth.test", {});
+    // The handle (r.user) is fixed at first install; the display name is what members see.
+    let who = `@${r.user}`;
+    try {
+      who = `${displayName(await userInfo(r.user_id))} (@${r.user})`;
+    } catch {
+      /* users:read missing */
+    }
     const extra = settings.channel_id ? ` Channel ${settings.channel_id} set.` : " Channel ID not set yet.";
-    return { ok: true, message: `Connected to ${r.team} as ${r.user}.${extra}` };
+    return { ok: true, message: `Connected to ${r.team} as ${who}.${extra}` };
   } catch (e) {
     return { ok: false, message: `Slack refused: ${(e as Error).message}. Check SLACK_BOT_TOKEN.` };
   }
