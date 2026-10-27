@@ -216,7 +216,15 @@ export default function StudyResults() {
                         <div key={s.id} className="flex items-start gap-3">
                           <div className="w-52 shrink-0">
                             <div className={clsx("text-[13px] font-medium tabular-nums", past ? "text-muted" : "text-ink")}>{fmtSlot(s.starts_at, s.minutes)}</div>
-                            <div className="text-[12px] text-muted truncate">{s.place || "No place given"} · {mine.length} of {s.capacity} {mine.length >= s.capacity ? "· full" : ""}</div>
+                            <div className="text-[12px] text-muted truncate">
+                              {s.place || (s.meet_url ? "Google Meet" : "No place given")} · {mine.length} of {s.capacity} {mine.length >= s.capacity ? "· full" : ""}
+                              {s.meet_url && (
+                                <>
+                                  {" · "}
+                                  <a className="text-brand-text hover:underline" href={s.meet_url} target="_blank" rel="noreferrer">Meet link</a>
+                                </>
+                              )}
+                            </div>
                           </div>
                           <div className="flex flex-wrap gap-1.5 min-w-0">
                             {mine.map((b) => (

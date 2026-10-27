@@ -1,7 +1,9 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { useEffect, useRef } from "react";
+import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { configured } from "@/lib/supabase";
-import { ToastProvider } from "@/components/ui/Toast";
+import { googleRedirectUri, runAdminAction } from "@/data/queries";
+import { ToastProvider, useToast } from "@/components/ui/Toast";
 import { Spinner } from "@/components/ui/Empty";
 import { AppShell } from "@/components/AppShell";
 import Login, { NotAdmin, Setup } from "@/pages/Login";
@@ -13,6 +15,35 @@ import Participants from "@/pages/Participants";
 import Friction from "@/pages/Friction";
 import Settings from "@/pages/Settings";
 
+// After Settings → Google Calendar → Connect, Google sends the browser back to the app's root with ?code=…&state=….
+// The query is read here at load, before the index route redirects to /studies and drops it.
+const LANDING = new URLSearchParams(window.location.search);
+
+function GoogleReturn() {
+  const nav = useNavigate();
+  const toast = useToast();
+  const done = useRef(false);
+  useEffect(() => {
+    if (done.current) return;
+    const code = LANDING.get("code");
+    const state = LANDING.get("state") ?? "";
+    const err = LANDING.get("error");
+    if (!code && !err) return;
+    done.current = true;
+    for (const k of ["code", "state", "error", "scope", "authuser", "prompt", "hd"]) LANDING.delete(k);
+    (async () => {
+      if (!code) {
+        toast(err === "access_denied" ? "Google sign-in was cancelled." : `Google sign-in failed (${err}).`, "error");
+      } else {
+        const r = await runAdminAction({ action: "google_connect", code, state, redirect_uri: googleRedirectUri() });
+        toast(r.message, r.ok ? "ok" : "error");
+      }
+      nav("/settings", { replace: true });
+    })();
+  }, [nav, toast]);
+  return null;
+}
+
 function Gate() {
   const { loading, session, isAdmin, adminChecked } = useAuth();
   if (!configured) return <Setup />;
@@ -20,7 +51,12 @@ function Gate() {
   if (!session) return <Login />;
   if (!adminChecked) return <Spinner label="Checking your access" />;
   if (!isAdmin) return <NotAdmin email={session.user.email ?? ""} />;
-  return <AppShell />;
+  return (
+    <>
+      <GoogleReturn />
+      <AppShell />
+    </>
+  );
 }
 
 export default function App() {

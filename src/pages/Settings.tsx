@@ -5,8 +5,9 @@ import { Card } from "@/components/ui/Card";
 import { Input, Label, Select, Textarea } from "@/components/ui/Field";
 import { Spinner } from "@/components/ui/Empty";
 import { useToast } from "@/components/ui/Toast";
-import { addAdmin, getSettings, listAdmins, removeAdmin, runAdminAction, saveSettings } from "@/data/queries";
+import { addAdmin, getSettings, googleRedirectUri, googleStatus, listAdmins, removeAdmin, runAdminAction, saveSettings, type GoogleStatus } from "@/data/queries";
 import { useAuth } from "@/lib/auth";
+import { fmtDate } from "@/lib/format";
 import type { Settings as SettingsT } from "@/lib/types";
 
 export default function Settings() {
@@ -17,7 +18,9 @@ export default function Settings() {
   const [newAdmin, setNewAdmin] = useState("");
   const [postLink, setPostLink] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [g, setG] = useState<GoogleStatus | null>(null);
   const fnBase = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
+  const mono = "font-mono text-[11.5px] text-ink break-all";
 
   useEffect(() => {
     Promise.all([getSettings(), listAdmins()])
@@ -26,6 +29,7 @@ export default function Settings() {
         setAdmins(ad);
       })
       .catch((e: Error) => toast(e.message, "error"));
+    googleStatus().then(setG).catch((e: Error) => toast(e.message, "error"));
   }, [toast]);
 
   async function run(label: string, fn: () => Promise<string>) {
@@ -72,6 +76,77 @@ export default function Settings() {
             <p className="text-[12px] text-muted mt-3">
               The bot token and signing secret live in Supabase as function secrets, never in this app. See the README.
             </p>
+          </Card>
+
+          <Card
+            title="Google Calendar"
+            action={
+              g?.connected ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  loading={busy === "gdis"}
+                  onClick={() =>
+                    run("gdis", async () => {
+                      const r = await runAdminAction({ action: "google_disconnect" });
+                      if (!r.ok) throw new Error(r.message);
+                      setG({ ...g, connected: false, email: null, connected_at: null, last_error: null });
+                      return r.message;
+                    })
+                  }
+                >
+                  Disconnect
+                </Button>
+              ) : g?.configured ? (
+                <Button
+                  size="sm"
+                  variant="primary"
+                  icon="external"
+                  loading={busy === "gcon"}
+                  onClick={() =>
+                    run("gcon", async () => {
+                      const r = await runAdminAction({ action: "google_auth_url", redirect_uri: googleRedirectUri() });
+                      if (!r.ok || typeof r.url !== "string") throw new Error(r.message || "Google did not give a sign-in link.");
+                      window.location.assign(r.url);
+                      return "Opening Google…";
+                    })
+                  }
+                >
+                  Connect
+                </Button>
+              ) : undefined
+            }
+          >
+            {!g ? (
+              <Spinner />
+            ) : g.connected ? (
+              <>
+                <p className="text-[13px] text-ink">
+                  Connected as <span className="font-medium">{g.email}</span>
+                  {g.connected_at && <span className="text-muted"> · since {fmtDate(g.connected_at)}</span>}
+                </p>
+                <p className="text-[12.5px] text-muted mt-1">
+                  Every booked session slot is an event on this account's calendar. Booked members are invited by email from it, and a study with its Meet switch on gets a Google Meet link in the booking DM, the invite and the reminder.
+                </p>
+                {g.last_error && <p className="text-[12.5px] text-danger mt-2">Last Google error: {g.last_error}. If it keeps happening, disconnect and connect again.</p>}
+              </>
+            ) : g.configured ? (
+              <>
+                <p className="text-[12.5px] text-muted">Not connected. Connect the Google Workspace account whose calendar should host the sessions; invites are sent from it. Google asks once for calendar access.</p>
+                <p className="text-[12px] text-muted mt-2">
+                  Redirect URI the OAuth client must list: <span className={mono}>{googleRedirectUri()}</span>
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-[12.5px] text-muted">
+                  Not set up. Add <span className={mono}>GOOGLE_CLIENT_ID</span> and <span className={mono}>GOOGLE_CLIENT_SECRET</span> to the function secrets (README, step 7), then reload this page.
+                </p>
+                <p className="text-[12px] text-muted mt-2">
+                  Redirect URI to register on the OAuth client: <span className={mono}>{googleRedirectUri()}</span>
+                </p>
+              </>
+            )}
           </Card>
 
           <Card title="Rules">
@@ -152,7 +227,7 @@ export default function Settings() {
               </div>
               <div>
                 <dt className="text-muted">Bot scopes</dt>
-                <dd className="text-ink">chat:write, im:write, users:read, channels:read, groups:read, channels:history</dd>
+                <dd className="text-ink">chat:write, im:write, users:read, users:read.email, channels:read, groups:read, channels:history, pins:write, commands, files:read</dd>
               </div>
               <div>
                 <dt className="text-muted">Scheduler</dt>

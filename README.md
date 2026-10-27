@@ -28,7 +28,7 @@ Slack is the front door. This app is the back office. Colleagues never sign in t
 
 ### 1. Database
 
-The schema is already applied to the "UX Lab" project if you are reading this from the first pull request. Otherwise open the SQL editor and run the files in `supabase/migrations/` in order, `0001` to `0007`.
+The schema is already applied to the "UX Lab" project if you are reading this from the first pull request. Otherwise open the SQL editor and run the files in `supabase/migrations/` in order, `0001` to `0008`.
 
 Add yourself as admin (SQL editor):
 
@@ -50,7 +50,7 @@ pnpm dev                     # http://localhost:5173
 
 ### 3. Slack app
 
-1. Go to api.slack.com/apps → Create new app → From a manifest → paste `supabase/slack-manifest.json` with `PROJECT_REF` replaced by your project ref (`lrqzizmxvgjgranooqnf`). For an app that already exists, open it → Features → App Manifest, paste the same JSON, save, then reinstall from Install App (the `commands` and `files:read` scopes and the `/friction` command need the reinstall).
+1. Go to api.slack.com/apps → Create new app → From a manifest → paste `supabase/slack-manifest.json` with `PROJECT_REF` replaced by your project ref (`lrqzizmxvgjgranooqnf`). For an app that already exists, open it → Features → App Manifest, paste the same JSON, save, then reinstall from Install App (the `commands`, `files:read` and `users:read.email` scopes and the `/friction` command need the reinstall; without `users:read.email` the bot cannot read work emails, so calendar invites are not sent).
 2. Install the app to the workspace. If the button reads **Request to Workspace Install**, a Slack admin has to approve the request first; after approval it becomes **Install to WalaPlus**. Copy the **Bot User OAuth Token** (`xoxb-…`) and, from Basic information, the **Signing secret**.
 3. Invite the bot to the channel: `/invite @research_desk` in the channel (the handle stays `research_desk` whatever the display name is).
 4. Copy the channel ID (channel details → bottom of the About tab) into Settings → Slack channel in the dashboard.
@@ -82,6 +82,18 @@ Open `supabase/cron.sql`, replace `PROJECT_REF`, run it in the SQL editor (alrea
 
 Dashboard → Participants → **Re-post profile form**. It posts and pins the profile prompt in the channel. Then create the first poll, schedule it, and watch the answers arrive.
 
+### 7. Google Calendar and Meet (optional, for session recruitment)
+
+With this set up, every slot a colleague books becomes an event on one Google Workspace calendar, the colleague is a guest on it (Google emails the invite, the update and the cancellation), and studies with the **Google Meet link in every booking** switch on get a Meet link in the booking DM, the invite and the day-before reminder. One-time set-up, about fifteen minutes, by someone who can create a project in Google Cloud for the WalaPlus Workspace:
+
+1. console.cloud.google.com → New project (any name, e.g. "Research Desk") → APIs & Services → Library → enable **Google Calendar API**.
+2. APIs & Services → OAuth consent screen: user type **Internal** (Workspace accounts only; tokens then never expire), app name "Research Desk", support and developer email yours. No scopes need adding here.
+3. Credentials → Create credentials → **OAuth client ID** → Web application. Authorised redirect URIs: `https://aeltwaty-design.github.io/UX-lab2/` and, for local development, `http://localhost:5173/` (exactly these, trailing slash included). Copy the client ID and secret.
+4. Supabase → Edge Functions → Secrets: add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+5. Dashboard → Settings → Google Calendar → **Connect**, sign in with the account whose calendar should host the sessions (invites come from it), allow calendar access. The refresh token is stored in the `google_calendar` table, which only the edge functions can read.
+
+What happens afterwards: a booking creates or updates the slot's event (one event per slot, every booked member a guest); moving to another slot updates both events; cancelling removes the guest, and the event itself when nobody is left; saving a live study pushes a changed place, intro or Meet switch to the events; deleting a study deletes its events. Declining the Google invite does not cancel the booking; only the button in the DM does. A member whose work email is not on Slack (or when `users:read.email` is missing) still gets the Meet link and an "Add it to your calendar" link in the DM, without the emailed invite. If Google refuses (expired token, disabled API), bookings still go through without the invite and the Settings card shows the last error.
+
 ## Development
 
 ```bash
@@ -97,7 +109,7 @@ Design tokens live in `src/styles/globals.css` (`@theme`). Colours, radii and sh
 Three more things colleagues can do from Slack, all behind the same profile gate:
 
 - **Preference test.** The builder takes two to six images (uploaded to the public `study-images` bucket) with a short label each. On save the dashboard draws them side by side in one picture (`src/lib/compare.ts`, a canvas; labelled A, B, C), stores it in the same bucket and records it as `studies.compare_url`; the post shows that picture and one button per image (`A · label`). Without the picture the bot falls back to one image block per option, which Slack stacks. A tap is a poll answer. Results show each image with its share.
-- **Session recruitment.** The builder takes slots (start, length, place or link, seats). The post lists the slots, strikes through full ones and offers a picker; a booking confirms by DM with a cancel button, counts against the weekly hours cap, and gets a reminder DM the day before. Moving to another slot cancels the first one. Tables `session_slots` and `session_bookings`.
+- **Session recruitment.** The builder takes slots (start, length, place or link, seats). The post lists the slots, strikes through full ones and offers a picker; a booking confirms by DM with a cancel button, counts against the weekly hours cap, and gets a reminder DM the day before. Moving to another slot cancels the first one. Tables `session_slots` and `session_bookings`. With Google Calendar connected (set-up step 7), each booked slot is a calendar event with the booked members as guests and, per study, a Google Meet link; the bot keeps the events in step on book, move, cancel, edit and delete (`supabase/functions/_shared/google.ts`).
 - **Friction inbox.** `/friction` anywhere in Slack, or the pinned "Report a broken step" button (Friction inbox → Post the prompt), opens a form: app, what you tried, what happened, optional screenshot. The screenshot is copied into the private `friction` bucket (the Slack link is kept as a fallback). The inbox shows each report with the sender's profile; you set the status (new, fixed, duplicate, by design), keep a private note and reply by DM. Every Sunday at 09:00 Riyadh the bot posts a digest to the channel (received, fixed, open); "Send digest now" posts it on demand.
 
-Migration `supabase/migrations/0003_version_two.sql` adds the columns, tables, view change, buckets and policies. The Slack manifest gained the `commands` and `files:read` scopes and the slash command, so an existing app needs its manifest updated and a reinstall. `0004_delete_guard.sql` adds the trigger that refuses to delete a live study. `0005_answer_changes.sql` adds `studies.allow_changes` and lists the view columns explicitly. `0006_compare_sheet.sql` adds `studies.compare_url`. `0007_profile_final.sql` adds the trigger that refuses changes to a saved profile from the bot.
+Migration `supabase/migrations/0003_version_two.sql` adds the columns, tables, view change, buckets and policies. The Slack manifest gained the `commands` and `files:read` scopes and the slash command, so an existing app needs its manifest updated and a reinstall. `0004_delete_guard.sql` adds the trigger that refuses to delete a live study. `0005_answer_changes.sql` adds `studies.allow_changes` and lists the view columns explicitly. `0006_compare_sheet.sql` adds `studies.compare_url`. `0007_profile_final.sql` adds the trigger that refuses changes to a saved profile from the bot. `0008_google_meet.sql` adds `studies.meet`, the event id and Meet link on `session_slots`, the cached `participants.email` and the `google_calendar` table.

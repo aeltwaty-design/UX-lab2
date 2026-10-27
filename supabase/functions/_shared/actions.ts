@@ -1,7 +1,8 @@
 // The operations behind every Slack-facing button, shared by the four functions.
 import { channelMemberIds, deleteMessage, displayName, dm, downloadFile, listUsers, permalink, pin, postEphemeral, postMessage, slack, SlackError, sleep, updateMessage, userInfo } from "./slack.ts";
 import { countResponses, db, fmtSlot, getSettings, getSlots, getStudy, hasAnswered, riyadh, setSetting, snapshot, weekKey, type Participant, type Settings, type SlotWithBookings, type Study } from "./db.ts";
-import { frictionDigestBlocks, frictionPromptBlocks, profilePromptBlocks, resultsBlocks, studyBlocks, totalsText } from "./blocks.ts";
+import { frictionDigestBlocks, frictionPromptBlocks, profilePromptBlocks, resultsBlocks, studyBlocks, totalsText, type SlotCalendar } from "./blocks.ts";
+import { deleteStudyEvents, syncSlotEvent, syncStudyEvents } from "./google.ts";
 
 export interface Outcome {
   ok: boolean;
@@ -255,6 +256,7 @@ export async function deleteStudy(id: string, removePosts: boolean): Promise<Out
     if (resultsTs && settings.channel_id && (await deleteMessage(settings.channel_id, resultsTs))) removed++;
     notes.push(removed ? `${removed} post${removed === 1 ? "" : "s"} removed from ${settings.channel_name}` : "no posts to remove");
   }
+  await deleteStudyEvents(id);
   const images = [...study.questions.flatMap((q) => q.options.map((o) => o.image_url ?? "")), study.compare_url ?? ""]
     .map((u) => u.split("/study-images/")[1] ?? "")
     .filter(Boolean);
@@ -274,6 +276,8 @@ export async function refreshStudyPost(id: string): Promise<Outcome> {
   const sessions = study.type === "session_recruitment";
   const closed = study.status !== "live";
   const slots = sessions ? await getSlots(id) : [];
+  // Booked slots carry a calendar event: a changed place, intro or Meet switch reaches the guests.
+  if (sessions) await syncStudyEvents(study, settings, slots);
   const answered = closed ? (sessions ? slots.reduce((n, s) => n + s.booked, 0) : await countResponses(id)) : 0;
   const text = closed ? `${study.title_en} · closed` : `${study.title_en}${study.title_ar ? ` · ${study.title_ar}` : ""}`;
   try {
@@ -398,7 +402,7 @@ export async function refreshSessionPost(study: Study, settings: Settings, close
 }
 
 export type BookResult =
-  | { ok: true; slot: SlotWithBookings; bookingId: string; moved: boolean; same: boolean }
+  | { ok: true; slot: SlotWithBookings; bookingId: string; moved: boolean; same: boolean; fromSlotId: string | null }
   | { ok: false; reason: "closed" | "unknown" | "past" | "full" | "cap"; hours?: number };
 
 /** Books a slot for a member: one active booking per study, moving it when they pick again, within the weekly hours cap. */
@@ -413,7 +417,7 @@ export async function bookSlot(p: Participant, studyId: string, slotId: string, 
   const { data: mine, error } = await db.from("session_bookings").select("id, slot_id").eq("study_id", studyId).eq("participant_id", p.id).is("cancelled_at", null).maybeSingle();
   if (error) throw error;
   const current = mine as { id: string; slot_id: string } | null;
-  if (current?.slot_id === slotId) return { ok: true, slot, bookingId: current.id, moved: false, same: true };
+  if (current?.slot_id === slotId) return { ok: true, slot, bookingId: current.id, moved: false, same: true, fromSlotId: null };
   if (slot.booked >= slot.capacity) return { ok: false, reason: "full" };
 
   // The weekly hours cap, counted on the Riyadh week the slot falls in.
@@ -436,7 +440,14 @@ export async function bookSlot(p: Participant, studyId: string, slotId: string, 
     .single();
   if (e3) throw e3;
   await refreshSessionPost(study, settings);
-  return { ok: true, slot: { ...slot, booked: slot.booked + 1 }, bookingId: (ins as { id: string }).id, moved: Boolean(current), same: false };
+  return { ok: true, slot: { ...slot, booked: slot.booked + 1 }, bookingId: (ins as { id: string }).id, moved: Boolean(current), same: false, fromSlotId: current?.slot_id ?? null };
+}
+
+/** Mirrors a new booking (and the slot it moved from) into Google Calendar, and says what the DM should show. */
+export async function sessionCalendar(study: Study, settings: Settings, slotId: string, fromSlotId: string | null, slackUserId: string): Promise<SlotCalendar> {
+  if (fromSlotId && fromSlotId !== slotId) await syncSlotEvent(study, fromSlotId, settings);
+  const r = await syncSlotEvent(study, slotId, settings);
+  return { meet_url: r.meet_url, invited: r.invited.includes(slackUserId) };
 }
 
 /** Cancels a booking from its DM button. Only the member who booked can cancel. */
@@ -455,6 +466,7 @@ export async function cancelBooking(bookingId: string, slackUserId: string): Pro
   }
   const [study, settings] = await Promise.all([getStudy(b.study_id), getSettings()]);
   if (study.status === "live") await refreshSessionPost(study, settings);
+  await syncSlotEvent(study, b.slot_id, settings);
   const slot = (await getSlots(b.study_id)).find((s) => s.id === b.slot_id);
   return { ok: true, study, slot };
 }
@@ -463,14 +475,14 @@ export async function cancelBooking(bookingId: string, slackUserId: string): Pro
 export async function sessionReminders(): Promise<Outcome> {
   const { data, error } = await db
     .from("session_bookings")
-    .select("id, participant:participants(slack_user_id, language, deleted_at), slot:session_slots(starts_at, minutes, place), study:studies(title_en, title_ar)")
+    .select("id, participant:participants(slack_user_id, language, deleted_at), slot:session_slots(starts_at, minutes, place, meet_url), study:studies(title_en, title_ar)")
     .is("cancelled_at", null)
     .is("reminded_at", null);
   if (error) throw error;
   type Row = {
     id: string;
     participant: { slack_user_id: string; language: string; deleted_at: string | null } | null;
-    slot: { starts_at: string; minutes: number; place: string } | null;
+    slot: { starts_at: string; minutes: number; place: string; meet_url: string | null } | null;
     study: { title_en: string; title_ar: string } | null;
   };
   const now = Date.now();
@@ -480,9 +492,10 @@ export async function sessionReminders(): Promise<Outcome> {
     const t = new Date(b.slot.starts_at).getTime();
     if (t < now || t > now + 24 * 3600_000) continue;
     const when = `${fmtSlot(b.slot.starts_at, b.slot.minutes)}${b.slot.place ? ` · ${b.slot.place}` : ""}`;
+    const meet = b.slot.meet_url;
     const text = b.participant.language === "ar"
-      ? `تذكير: جلسة "${b.study?.title_ar || b.study?.title_en || ""}" ${when}. إن لم تستطع الحضور، ألغِ الحجز من رسالة التأكيد.`
-      : `Reminder: your session "${b.study?.title_en ?? ""}" is ${when}. If you cannot make it, cancel from the booking message.`;
+      ? `تذكير: جلسة "${b.study?.title_ar || b.study?.title_en || ""}" ${when}.${meet ? ` رابط Google Meet: ${meet}` : ""} إن لم تستطع الحضور، ألغِ الحجز من رسالة التأكيد.`
+      : `Reminder: your session "${b.study?.title_en ?? ""}" is ${when}.${meet ? ` Google Meet: ${meet}` : ""} If you cannot make it, cancel from the booking message.`;
     try {
       await dm(b.participant.slack_user_id, text);
       sent++;

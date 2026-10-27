@@ -4,7 +4,7 @@
 import { dm, displayName, openView, SlackError, updateMessage, userInfo, verifySlack } from "../_shared/slack.ts";
 import { db, fmtSlot, getParticipant, getSettings, getStudy, setSetting, type Participant, type Settings } from "../_shared/db.ts";
 import { frictionModal, profileModal, sessionBookedBlocks, surveyModal, type Pending } from "../_shared/blocks.ts";
-import { bookSlot, cancelBooking, processScreenshot, readFriction, recordFriction, recordPollTap, recordSurvey, thank, type SurveyValues } from "../_shared/actions.ts";
+import { bookSlot, cancelBooking, processScreenshot, readFriction, recordFriction, recordPollTap, recordSurvey, sessionCalendar, thank, type SurveyValues } from "../_shared/actions.ts";
 import { hasAnswered } from "../_shared/db.ts";
 
 const ok = (body: unknown = "") =>
@@ -87,8 +87,10 @@ async function finishBooking(p: Participant, studyId: string, slotId: string, ch
     return;
   }
   const study = await getStudy(studyId);
-  await dm(p.slack_user_id, `${r.moved ? "Moved" : "Booked"}: ${study.title_en}, ${when}.`, sessionBookedBlocks(study, r.slot, r.bookingId, r.moved));
-  await thank(channel, p.slack_user_id, `${r.moved ? "Moved to" : "Booked"}: ${when}. The details and a cancel button are in your DMs.`);
+  // The calendar event (and its Meet link) is created or updated before the DM, so the DM can carry the link.
+  const cal = await sessionCalendar(study, settings, r.slot.id, r.fromSlotId, p.slack_user_id);
+  await dm(p.slack_user_id, `${r.moved ? "Moved" : "Booked"}: ${study.title_en}, ${when}.${cal.meet_url ? ` Google Meet: ${cal.meet_url}` : ""}`, sessionBookedBlocks(study, r.slot, r.bookingId, r.moved, cal));
+  await thank(channel, p.slack_user_id, `${r.moved ? "Moved to" : "Booked"}: ${when}. The details${cal.meet_url ? ", the Meet link" : ""} and a cancel button are in your DMs.`);
 }
 
 async function handleCancel(payload: Payload, bookingId: string) {
@@ -172,6 +174,8 @@ Deno.serve(async (req) => {
       if (!action) return ok();
       const [kind, a, b] = action.action_id.split(":");
 
+      // The "Join Google Meet" link button in the booking DM also reports a tap; the browser already opened the link.
+      if (kind === "meet") return ok();
       if (kind === "profile") {
         if (payload.trigger_id) await openProfile(payload.trigger_id, user, null, channel);
         return ok();

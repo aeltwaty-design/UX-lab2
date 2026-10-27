@@ -114,7 +114,7 @@ export interface SlackUser {
   real_name?: string;
   is_bot?: boolean;
   deleted?: boolean;
-  profile?: { display_name?: string; real_name?: string };
+  profile?: { display_name?: string; real_name?: string; email?: string };
 }
 
 export async function listUsers(): Promise<SlackUser[]> {

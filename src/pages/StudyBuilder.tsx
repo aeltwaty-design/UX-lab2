@@ -85,6 +85,7 @@ function blankDraft(): StudyDraft {
     close_at: close.toISOString(),
     allow_changes: true,
     compare_url: null,
+    meet: true,
   };
 }
 
@@ -192,6 +193,7 @@ export default function StudyBuilder() {
           close_at: s.close_at,
           allow_changes: s.allow_changes ?? true,
           compare_url: s.compare_url ?? null,
+          meet: s.meet ?? true,
         });
         setQuestions(s.questions.length ? s.questions : s.type === "session_recruitment" ? [] : [newQuestion(0)]);
         setSlots(s.slots.map((x) => ({ id: x.id, starts_at: x.starts_at, minutes: x.minutes, place: x.place, capacity: x.capacity })));
@@ -508,6 +510,14 @@ export default function StudyBuilder() {
                   </div>
                 </div>
               )}
+              <div className="mt-3 pt-3 border-t border-line-2">
+                <Toggle
+                  checked={draft.meet}
+                  onChange={(v) => set("meet", v)}
+                  label="Google Meet link in every booking"
+                  hint={draft.meet ? "Each booked slot gets a calendar event with a Meet link; the link goes in the booking DM, the invite and the reminder. Needs Google Calendar connected in Settings." : "Off: the calendar invite carries the place only. For sessions in person."}
+                />
+              </div>
             </Card>
           ) : (
             <Card

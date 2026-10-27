@@ -63,6 +63,8 @@ export interface StudyDraft {
   allow_changes: boolean;
   /** Preference tests: the side-by-side picture. saveComparison sets it after the save. */
   compare_url: string | null;
+  /** Session recruitment: a Google Meet link with every booked slot's calendar event. */
+  meet: boolean;
 }
 
 /**
@@ -139,6 +141,7 @@ export async function updatePublishedStudy(draft: StudyDraft & { id: string }, q
     audience_teams: draft.audience_teams,
     target: draft.target,
     allow_changes: draft.allow_changes,
+    meet: draft.meet,
   };
   if (draft.status === "live") patch.close_at = draft.close_at;
   const up = await supabase.from("studies").update(patch).eq("id", draft.id);
@@ -368,7 +371,11 @@ export type AdminAction =
   | { action: "post_friction_prompt" }
   | { action: "friction_digest" }
   | { action: "session_reminders" }
-  | { action: "dm_participant"; participant_id: string; text: string };
+  | { action: "dm_participant"; participant_id: string; text: string }
+  | { action: "google_status" }
+  | { action: "google_auth_url"; redirect_uri: string }
+  | { action: "google_connect"; code: string; state: string; redirect_uri: string }
+  | { action: "google_disconnect" };
 
 export interface AdminResult {
   ok: boolean;
@@ -390,4 +397,32 @@ export async function runAdminAction(body: AdminAction): Promise<AdminResult> {
     return { ok: false, message: error.message };
   }
   return data ?? { ok: false, message: "No reply from the function." };
+}
+
+// ---------- Google Calendar (the connection lives in the database, behind the admin-actions function) ----------
+
+export interface GoogleStatus {
+  /** Both client secrets are set on the functions. */
+  configured: boolean;
+  connected: boolean;
+  email: string | null;
+  connected_at: string | null;
+  last_error: string | null;
+}
+
+export async function googleStatus(): Promise<GoogleStatus> {
+  const r = await runAdminAction({ action: "google_status" });
+  if (!r.ok) throw new Error(r.message);
+  return {
+    configured: r.configured === true,
+    connected: r.connected === true,
+    email: typeof r.email === "string" ? r.email : null,
+    connected_at: typeof r.connected_at === "string" ? r.connected_at : null,
+    last_error: typeof r.last_error === "string" ? r.last_error : null,
+  };
+}
+
+/** Where Google sends the browser back after consent: the app's root, which must be listed on the OAuth client. */
+export function googleRedirectUri(): string {
+  return `${window.location.origin}${import.meta.env.BASE_URL}`;
 }

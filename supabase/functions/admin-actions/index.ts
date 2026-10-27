@@ -3,6 +3,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { db } from "../_shared/db.ts";
 import { closeStudy, deletePost, deleteStudy, dmParticipant, frictionDigest, postFrictionPrompt, postResults, publishStudy, refreshStudyPost, remindMissingProfiles, remindStudy, repostProfile, sessionReminders, syncMembers, testSlack, type Outcome } from "../_shared/actions.ts";
+import { googleAuthUrl, googleConnect, googleDisconnect, googleStatus } from "../_shared/google.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -26,7 +27,7 @@ async function callerIsAdmin(req: Request): Promise<boolean> {
   return Boolean(row);
 }
 
-type Body = { action: string; study_id?: string; link?: string; participant_id?: string; text?: string; remove_posts?: boolean };
+type Body = { action: string; study_id?: string; link?: string; participant_id?: string; text?: string; remove_posts?: boolean; redirect_uri?: string; code?: string; state?: string };
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -71,6 +72,14 @@ Deno.serve(async (req) => {
         return reply(await dmParticipant(body.participant_id ?? "", body.text ?? ""));
       case "session_reminders":
         return reply(await sessionReminders());
+      case "google_status":
+        return reply(await googleStatus());
+      case "google_auth_url":
+        return reply(await googleAuthUrl(body.redirect_uri ?? ""));
+      case "google_connect":
+        return reply(await googleConnect(body.code ?? "", body.state ?? "", body.redirect_uri ?? ""));
+      case "google_disconnect":
+        return reply(await googleDisconnect());
       default:
         return reply({ ok: false, message: `Unknown action ${body.action}.` }, 400);
     }

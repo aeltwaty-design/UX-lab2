@@ -24,6 +24,8 @@ export interface Settings {
   friction_digest_at?: string;
   /** True once Slack accepted the friction form with its screenshot field (needs files:read). */
   friction_files_ok?: boolean;
+  /** The one-time state of a Google sign-in started from Settings → Connect. */
+  google_oauth_state?: { state: string; redirect: string; at: string };
 }
 
 export async function getSettings(): Promise<Settings> {
@@ -36,6 +38,11 @@ export async function getSettings(): Promise<Settings> {
 
 export async function setSetting(key: string, value: unknown) {
   const { error } = await db.from("settings").upsert({ key, value }, { onConflict: "key" });
+  if (error) throw error;
+}
+
+export async function clearSetting(key: string) {
+  const { error } = await db.from("settings").delete().eq("key", key);
   if (error) throw error;
 }
 
@@ -62,6 +69,8 @@ export interface Study {
   allow_changes: boolean;
   /** Preference tests: the side-by-side picture the dashboard built on the last save; null means one image block each. */
   compare_url: string | null;
+  /** Session recruitment: each slot's calendar event gets a Google Meet link (when Google Calendar is connected). */
+  meet: boolean;
   questions: Question[];
 }
 
@@ -77,7 +86,18 @@ export async function getStudy(id: string): Promise<Study> {
 
 // ---------- session recruitment ----------
 
-export interface SessionSlot { id: string; study_id: string; position: number; starts_at: string; minutes: number; place: string; capacity: number }
+export interface SessionSlot {
+  id: string;
+  study_id: string;
+  position: number;
+  starts_at: string;
+  minutes: number;
+  place: string;
+  capacity: number;
+  /** Set by the bot once the slot has an event on the connected Google calendar. */
+  google_event_id: string | null;
+  meet_url: string | null;
+}
 export interface SlotWithBookings extends SessionSlot { booked: number }
 
 /** The study's slots in time order, each with its count of active bookings. */
@@ -127,6 +147,8 @@ export interface Participant {
   team: string | null;
   apps: string[];
   language: "en" | "ar";
+  /** Work email from Slack, cached for calendar invites (needs users:read.email). */
+  email: string | null;
   deleted_at: string | null;
 }
 

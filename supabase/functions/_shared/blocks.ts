@@ -1,6 +1,6 @@
 // Block Kit builders. Every message is bilingual: English line, Arabic line.
 import type { Block } from "./slack.ts";
-import { fmtDate, fmtSlot, smallGroup, type Option, type Question, type Settings, type SlotWithBookings, type Study } from "./db.ts";
+import { fmtDate, fmtSlot, smallGroup, type Option, type Question, type SessionSlot, type Settings, type SlotWithBookings, type Study } from "./db.ts";
 
 const AGE_BANDS = ["18-24", "25-34", "35-44", "45+"];
 const LETTERS = ["A", "B", "C", "D", "E", "F"];
@@ -245,27 +245,57 @@ export function frictionDigestBlocks(s: DigestStats, settings: Settings): Block[
   ];
 }
 
-/** The DM that confirms a session booking, with its cancel button. */
-export function sessionBookedBlocks(study: Study, slot: SlotWithBookings, bookingId: string, moved: boolean): Block[] {
+export interface SlotCalendar {
+  /** The Google Meet link of the slot's calendar event, when there is one. */
+  meet_url: string | null;
+  /** True when the member is a guest on the calendar event, so Google has emailed them the invite. */
+  invited: boolean;
+}
+
+/** A "save to Google Calendar" link for a member the bot could not invite (no connected calendar, or no work email on Slack). */
+export function calendarTemplateUrl(study: Study, slot: SessionSlot, meetUrl: string | null): string {
+  const stamp = (d: Date) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  const start = new Date(slot.starts_at);
+  const end = new Date(start.getTime() + slot.minutes * 60_000);
+  const q = new URLSearchParams({
+    action: "TEMPLATE",
+    text: `${study.title_en} · UX research session`,
+    dates: `${stamp(start)}/${stamp(end)}`,
+    details: [study.intro_en, meetUrl ? `Google Meet: ${meetUrl}` : ""].filter(Boolean).join("\n\n"),
+    location: slot.place || meetUrl || "",
+    ctz: "Asia/Riyadh",
+  });
+  return `https://calendar.google.com/calendar/render?${q}`;
+}
+
+/** The DM that confirms a session booking: when, where, the Meet link and the calendar status, with its cancel button. */
+export function sessionBookedBlocks(study: Study, slot: SlotWithBookings, bookingId: string, moved: boolean, cal: SlotCalendar = { meet_url: null, invited: false }): Block[] {
   const when = `${fmtSlot(slot.starts_at, slot.minutes)}${slot.place ? ` · ${slot.place}` : ""}`;
-  return [
-    md(bi(
-      `*${moved ? "Moved" : "Booked"}: ${study.title_en}*\n${when}\n${slot.minutes} minutes. We remind you the day before.`,
-      `*${moved ? "تم نقل الحجز" : "تم الحجز"}: ${study.title_ar || study.title_en}*\n${slot.minutes} دقيقة. نذكّرك قبل الموعد بيوم.`,
-    )),
-    {
-      type: "actions",
-      block_id: `booking:${bookingId}`,
-      elements: [{
-        type: "button",
-        style: "danger",
-        text: pt("Cancel this booking · إلغاء الحجز"),
-        action_id: `session:cancel:${bookingId}`,
-        value: bookingId,
-        confirm: { title: pt("Cancel the booking?"), text: { type: "mrkdwn", text: "The slot goes back to the channel." }, confirm: pt("Cancel it"), deny: pt("Keep it") },
-      }],
-    },
-  ];
+  const add = calendarTemplateUrl(study, slot, cal.meet_url);
+  const en = [
+    `*${moved ? "Moved" : "Booked"}: ${study.title_en}*`,
+    when,
+    ...(cal.meet_url ? [`On Google Meet: ${cal.meet_url}`] : []),
+    `${slot.minutes} minutes. We remind you the day before.`,
+    cal.invited ? "A calendar invite is on its way to your work inbox." : `<${add}|Add it to your calendar>`,
+  ].join("\n");
+  const ar = [
+    `*${moved ? "تم نقل الحجز" : "تم الحجز"}: ${study.title_ar || study.title_en}*`,
+    ...(cal.meet_url ? ["الجلسة على Google Meet، الرابط أعلاه."] : []),
+    `${slot.minutes} دقيقة. نذكّرك قبل الموعد بيوم.`,
+    cal.invited ? "ستصلك دعوة تقويم على بريد العمل." : `<${add}|أضفها إلى تقويمك>`,
+  ].join("\n");
+  const buttons: Block[] = [];
+  if (cal.meet_url) buttons.push({ type: "button", style: "primary", text: pt("Join Google Meet · انضم"), url: cal.meet_url, action_id: `meet:${bookingId}`, value: bookingId });
+  buttons.push({
+    type: "button",
+    style: "danger",
+    text: pt("Cancel this booking · إلغاء الحجز"),
+    action_id: `session:cancel:${bookingId}`,
+    value: bookingId,
+    confirm: { title: pt("Cancel the booking?"), text: { type: "mrkdwn", text: "The slot goes back to the channel." }, confirm: pt("Cancel it"), deny: pt("Keep it") },
+  });
+  return [md(bi(en, ar)), { type: "actions", block_id: `booking:${bookingId}`, elements: buttons }];
 }
 
 function questionInput(q: Question): Block {

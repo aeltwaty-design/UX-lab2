@@ -58,6 +58,8 @@ export interface Study {
   allow_changes: boolean;
   /** Preference tests: the side-by-side picture the dashboard built on the last save, in the study-images bucket. */
   compare_url: string | null;
+  /** Session recruitment: each booked slot's calendar event gets a Google Meet link (when Google Calendar is connected). */
+  meet: boolean;
   created_at: string;
   updated_at: string;
   /** From the study_stats view. */
@@ -80,6 +82,9 @@ export interface SessionSlot {
   minutes: number;
   place: string;
   capacity: number;
+  /** Set by the bot once the slot has an event on the connected Google calendar. */
+  google_event_id: string | null;
+  meet_url: string | null;
 }
 
 export interface SessionBooking {
@@ -137,6 +142,8 @@ export interface Participant {
   team: string | null;
   apps: string[];
   language: Lang;
+  /** Work email from Slack, cached by the bot for calendar invites. */
+  email: string | null;
   profile_at: string;
   updated_at: string;
   deleted_at: string | null;
