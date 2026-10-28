@@ -1,6 +1,6 @@
 // Actions the dashboard cannot do itself because they need the Slack bot token.
 // The caller must be a signed-in admin (Supabase Auth JWT + admins table).
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2";
 import { db } from "../_shared/db.ts";
 import { closeStudy, deleteAnnouncement, deletePost, deleteStudy, dmParticipant, frictionDigest, postAnnouncement, postFrictionPrompt, postResults, publishStudy, refreshAnnouncement, refreshStudyPost, remindMissingProfiles, remindStudy, repostProfile, sessionReminders, syncMembers, testSlack, type Outcome } from "../_shared/actions.ts";
 import { googleAuthUrl, googleConnect, googleDisconnect, googleStatus } from "../_shared/google.ts";

@@ -1,4 +1,5 @@
-import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+// npm rather than jsr: Supabase's function bundler kept timing out on the JSR manifest (28 Oct 2026).
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 
 export const db: SupabaseClient = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
