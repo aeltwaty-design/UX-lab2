@@ -11,6 +11,8 @@ import Studies from "@/pages/Studies";
 import StudyBuilder from "@/pages/StudyBuilder";
 import StudyResults from "@/pages/StudyResults";
 import ResultsPost from "@/pages/ResultsPost";
+import Announcements from "@/pages/Announcements";
+import AnnouncementEditor from "@/pages/AnnouncementEditor";
 import Participants from "@/pages/Participants";
 import Friction from "@/pages/Friction";
 import Settings from "@/pages/Settings";
@@ -71,6 +73,9 @@ export default function App() {
             <Route path="/studies/:id" element={<StudyResults />} />
             <Route path="/studies/:id/edit" element={<StudyBuilder />} />
             <Route path="/studies/:id/post" element={<ResultsPost />} />
+            <Route path="/announcements" element={<Announcements />} />
+            <Route path="/announcements/new" element={<AnnouncementEditor />} />
+            <Route path="/announcements/:id" element={<AnnouncementEditor />} />
             <Route path="/participants" element={<Participants />} />
             <Route path="/friction" element={<Friction />} />
             <Route path="/settings" element={<Settings />} />

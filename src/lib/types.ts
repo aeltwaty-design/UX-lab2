@@ -259,3 +259,24 @@ export const APPS = [
   { value: "walaplus", label: "WalaPlus" },
   { value: "walaone", label: "WalaOne" },
 ];
+
+export type AnnouncementStatus = "draft" | "scheduled" | "posted";
+
+/** A free-form post from the research team to the channel, outside any study. */
+export interface Announcement {
+  id: string;
+  title_en: string;
+  body_en: string;
+  body_ar: string;
+  /** The bot pins the post in the channel (needs pins:write). */
+  pin: boolean;
+  status: AnnouncementStatus;
+  publish_at: string | null;
+  posted_at: string | null;
+  slack_channel_id: string | null;
+  slack_ts: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const ANNOUNCEMENT_STATUS: Record<AnnouncementStatus, string> = { draft: "Draft", scheduled: "Scheduled", posted: "Posted" };

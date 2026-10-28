@@ -1,9 +1,9 @@
 // Scheduler, called by pg_cron every five minutes with the x-cron-secret header.
-// Publishes scheduled studies, closes live ones at their close date, sends the day-before reminder,
+// Publishes scheduled studies and announcements, closes live studies at their close date, sends the day-before reminder,
 // keeps asking for missing profiles, refreshes the channel roster once an hour, reminds booked sessions a day ahead
 // and posts the weekly friction digest on Sunday morning.
 import { db, getSettings } from "../_shared/db.ts";
-import { askForProfiles, closeStudy, frictionDigestIfDue, publishStudy, remindStudy, sessionReminders, syncMembers } from "../_shared/actions.ts";
+import { askForProfiles, closeStudy, frictionDigestIfDue, postAnnouncement, publishStudy, remindStudy, sessionReminders, syncMembers } from "../_shared/actions.ts";
 
 /** CRON_SECRET from the function secrets wins; otherwise the value migration 0002 generated in the database. */
 async function cronSecret(): Promise<string> {
@@ -35,6 +35,10 @@ Deno.serve(async (req) => {
   try {
     const { data: due } = await db.from("studies").select("id, title_en").eq("status", "scheduled").lte("publish_at", now.toISOString());
     for (const s of (due ?? []) as { id: string; title_en: string }[]) await attempt(`publish ${s.title_en}`, () => publishStudy(s.id));
+
+    const { data: notes } = await db.from("announcements").select("id, title_en, body_en").eq("status", "scheduled").lte("publish_at", now.toISOString());
+    for (const a of (notes ?? []) as { id: string; title_en: string; body_en: string }[])
+      await attempt(`announce ${a.title_en || a.body_en.slice(0, 40)}`, () => postAnnouncement(a.id));
 
     const { data: closing } = await db.from("studies").select("id, title_en").eq("status", "live").lte("close_at", now.toISOString());
     for (const s of (closing ?? []) as { id: string; title_en: string }[]) await attempt(`close ${s.title_en}`, () => closeStudy(s.id));

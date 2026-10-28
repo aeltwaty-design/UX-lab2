@@ -1,7 +1,7 @@
 // The operations behind every Slack-facing button, shared by the four functions.
 import { channelMemberIds, deleteMessage, displayName, dm, downloadFile, listUsers, permalink, pin, postEphemeral, postMessage, slack, SlackError, sleep, updateMessage, userInfo } from "./slack.ts";
-import { countResponses, db, fmtSlot, getSettings, getSlots, getStudy, hasAnswered, riyadh, setSetting, snapshot, weekKey, type Participant, type Settings, type SlotWithBookings, type Study } from "./db.ts";
-import { frictionDigestBlocks, frictionPromptBlocks, profilePromptBlocks, resultsBlocks, studyBlocks, totalsText, type SlotCalendar } from "./blocks.ts";
+import { countResponses, db, fmtSlot, getAnnouncement, getSettings, getSlots, getStudy, hasAnswered, riyadh, setSetting, snapshot, weekKey, type Participant, type Settings, type SlotWithBookings, type Study } from "./db.ts";
+import { announcementBlocks, announcementText, frictionDigestBlocks, frictionPromptBlocks, profilePromptBlocks, resultsBlocks, studyBlocks, totalsText, type SlotCalendar } from "./blocks.ts";
 import { deleteStudyEvents, syncSlotEvent, syncStudyEvents } from "./google.ts";
 
 export interface Outcome {
@@ -616,6 +616,59 @@ export async function dmParticipant(participantId: string, text: string): Promis
   if (!p || p.deleted_at) return { ok: false, message: "That member was forgotten, so no DM is possible." };
   await dm(p.slack_user_id, t.slice(0, 2000));
   return { ok: true, message: `DM sent to ${p.name}.` };
+}
+
+// ---------- announcements ----------
+
+/** Posts an announcement to the channel and pins it when asked. Idempotent once posted. */
+export async function postAnnouncement(id: string): Promise<Outcome> {
+  const [a, settings] = await Promise.all([getAnnouncement(id), getSettings()]);
+  const channel = needChannel(settings);
+  if (a.status === "posted") return { ok: true, message: "Already posted." };
+  if (!a.body_en.trim()) return { ok: false, message: "Write the English text first." };
+  const r = await postMessage(channel, announcementText(a), announcementBlocks(a));
+  if (a.pin) await pin(channel, r.ts);
+  const { error } = await db
+    .from("announcements")
+    .update({ status: "posted", posted_at: new Date().toISOString(), slack_channel_id: channel, slack_ts: r.ts })
+    .eq("id", id);
+  if (error) throw error;
+  return { ok: true, message: `Posted to ${settings.channel_name}${a.pin ? " and pinned" : ""}.` };
+}
+
+/** Re-renders a posted announcement after an edit, and pins or unpins it to match the switch. */
+export async function refreshAnnouncement(id: string): Promise<Outcome> {
+  const [a, settings] = await Promise.all([getAnnouncement(id), getSettings()]);
+  if (a.status !== "posted" || !a.slack_channel_id || !a.slack_ts) return { ok: true, message: "Saved." };
+  try {
+    await updateMessage(a.slack_channel_id, a.slack_ts, announcementText(a), announcementBlocks(a));
+  } catch (e) {
+    const code = e instanceof SlackError ? e.code : (e as Error).message;
+    return { ok: false, message: `Saved, but the post in ${settings.channel_name} was not updated (${code}).` };
+  }
+  if (a.pin) await pin(a.slack_channel_id, a.slack_ts);
+  else {
+    try {
+      await slack("pins.remove", { channel: a.slack_channel_id, timestamp: a.slack_ts });
+    } catch {
+      /* was not pinned */
+    }
+  }
+  return { ok: true, message: `Saved. The post in ${settings.channel_name} is updated.` };
+}
+
+/** Removes an announcement and, when asked, the bot's post for it. */
+export async function deleteAnnouncement(id: string, removePost: boolean): Promise<Outcome> {
+  const [a, settings] = await Promise.all([getAnnouncement(id), getSettings()]);
+  let note = "";
+  if (removePost && a.slack_channel_id && a.slack_ts) {
+    note = (await deleteMessage(a.slack_channel_id, a.slack_ts))
+      ? ` The post was removed from ${settings.channel_name}.`
+      : ` The post in ${settings.channel_name} was not removed (already gone?).`;
+  }
+  const { error } = await db.from("announcements").delete().eq("id", id);
+  if (error) throw error;
+  return { ok: true, message: `Announcement deleted.${note}` };
 }
 
 function fmt(iso: string | null): string {

@@ -135,6 +135,27 @@ export function weekKey(iso: string): string {
   return new Date(Date.UTC(r.y, r.m - 1, r.d - r.weekday)).toISOString().slice(0, 10);
 }
 
+// ---------- announcements ----------
+
+export interface Announcement {
+  id: string;
+  title_en: string;
+  body_en: string;
+  body_ar: string;
+  pin: boolean;
+  status: "draft" | "scheduled" | "posted";
+  publish_at: string | null;
+  posted_at: string | null;
+  slack_channel_id: string | null;
+  slack_ts: string | null;
+}
+
+export async function getAnnouncement(id: string): Promise<Announcement> {
+  const { data, error } = await db.from("announcements").select("*").eq("id", id).single();
+  if (error) throw error;
+  return data as Announcement;
+}
+
 // ---------- participants ----------
 
 export interface Participant {

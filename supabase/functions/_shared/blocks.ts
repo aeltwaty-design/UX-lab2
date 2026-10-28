@@ -1,6 +1,6 @@
 // Block Kit builders. Every message is bilingual: English line, Arabic line.
 import type { Block } from "./slack.ts";
-import { fmtDate, fmtSlot, smallGroup, type Option, type Question, type SessionSlot, type Settings, type SlotWithBookings, type Study } from "./db.ts";
+import { fmtDate, fmtSlot, smallGroup, type Announcement, type Option, type Question, type SessionSlot, type Settings, type SlotWithBookings, type Study } from "./db.ts";
 
 const AGE_BANDS = ["18-24", "25-34", "35-44", "45+"];
 const LETTERS = ["A", "B", "C", "D", "E", "F"];
@@ -374,4 +374,20 @@ export function resultsBlocks(study: Study, body_en: string, body_ar: string, to
   if (totals) blocks.push({ type: "divider" }, md(totals.slice(0, 2900)));
   blocks.push(ctx(`${smallGroup(answered, threshold)} answered · thank you · شكراً لكم`));
   return blocks;
+}
+
+/** The channel post for an announcement: optional headline, English, Arabic, a short sign-off line. */
+export function announcementBlocks(a: Announcement): Block[] {
+  const blocks: Block[] = [];
+  if (a.title_en.trim()) blocks.push({ type: "header", text: pt(a.title_en.trim(), true) });
+  if (a.body_en.trim()) blocks.push(md(a.body_en.trim().slice(0, 2900)));
+  if (a.body_ar.trim()) blocks.push(md(a.body_ar.trim().slice(0, 2900)));
+  blocks.push(ctx("From the research team · من فريق البحث"));
+  return blocks;
+}
+
+/** The notification text of an announcement: the headline, or the first line of the English text. */
+export function announcementText(a: Announcement): string {
+  const first = a.body_en.trim().split("\n")[0] ?? "";
+  return (a.title_en.trim() || first || "Announcement").slice(0, 200);
 }

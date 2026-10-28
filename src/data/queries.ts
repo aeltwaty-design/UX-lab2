@@ -3,6 +3,8 @@ import type { SlotDraft } from "@/lib/preview";
 import { composeComparison, type CompareOption } from "@/lib/compare";
 import {
   DEFAULT_SETTINGS,
+  type Announcement,
+  type AnnouncementStatus,
   type ChannelMember,
   type FrictionReport,
   type Participant,
@@ -354,6 +356,32 @@ export async function removeAdmin(email: string): Promise<void> {
   if (error) fail(error);
 }
 
+// ---------- Announcements ----------
+
+export async function listAnnouncements(): Promise<Announcement[]> {
+  const { data, error } = await supabase.from("announcements").select("*").order("created_at", { ascending: false });
+  if (error) fail(error);
+  return (data ?? []) as Announcement[];
+}
+
+export async function getAnnouncement(id: string): Promise<Announcement> {
+  const { data, error } = await supabase.from("announcements").select("*").eq("id", id).single();
+  if (error) fail(error);
+  return data as Announcement;
+}
+
+export type AnnouncementDraft = Pick<Announcement, "title_en" | "body_en" | "body_ar" | "pin" | "publish_at"> & { id?: string; status: AnnouncementStatus };
+
+/** Inserts or updates the row. A posted announcement keeps its post ids; the caller then refreshes the post. */
+export async function saveAnnouncement(d: AnnouncementDraft): Promise<Announcement> {
+  const row = { title_en: d.title_en.trim(), body_en: d.body_en, body_ar: d.body_ar, pin: d.pin, publish_at: d.publish_at, status: d.status };
+  const res = d.id
+    ? await supabase.from("announcements").update(row).eq("id", d.id).select("*").single()
+    : await supabase.from("announcements").insert(row).select("*").single();
+  if (res.error) fail(res.error);
+  return res.data as Announcement;
+}
+
 // ---------- Slack actions (edge function, needs the bot token) ----------
 
 export type AdminAction =
@@ -372,6 +400,9 @@ export type AdminAction =
   | { action: "friction_digest" }
   | { action: "session_reminders" }
   | { action: "dm_participant"; participant_id: string; text: string }
+  | { action: "post_announcement"; announcement_id: string }
+  | { action: "refresh_announcement"; announcement_id: string }
+  | { action: "delete_announcement"; announcement_id: string; remove_posts: boolean }
   | { action: "google_status" }
   | { action: "google_auth_url"; redirect_uri: string }
   | { action: "google_connect"; code: string; state: string; redirect_uri: string }

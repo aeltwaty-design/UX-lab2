@@ -8,7 +8,7 @@ Slack is the front door. This app is the back office. Colleagues never sign in t
 
 | Part | Where | What it does |
 | --- | --- | --- |
-| Dashboard | `src/` | React 19 + Vite + Tailwind 4. Studies, builder with Slack preview, results with profile splits, results post, participants, settings. |
+| Dashboard | `src/` | React 19 + Vite + Tailwind 4. Studies, builder with Slack preview, results with profile splits, results post, announcements, participants, settings. |
 | Database | `supabase/migrations/0001_init.sql` | Studies, questions, options, participants, responses, answers, results posts, channel roster, settings, admins. Row level security: admins only. |
 | Slack app | `supabase/functions/` | Four edge functions: `slack-events` (joins and leaves), `slack-interactions` (taps, profile form, survey form), `publish-due` (scheduler), `admin-actions` (buttons in the dashboard that need the bot token). |
 | Scheduler | `supabase/cron.sql` | pg_cron calls `publish-due` every five minutes. |
@@ -28,7 +28,7 @@ Slack is the front door. This app is the back office. Colleagues never sign in t
 
 ### 1. Database
 
-The schema is already applied to the "UX Lab" project if you are reading this from the first pull request. Otherwise open the SQL editor and run the files in `supabase/migrations/` in order, `0001` to `0008`.
+The schema is already applied to the "UX Lab" project if you are reading this from the first pull request. Otherwise open the SQL editor and run the files in `supabase/migrations/` in order, `0001` to `0009`.
 
 Add yourself as admin (SQL editor):
 
@@ -94,6 +94,10 @@ With this set up, every slot a colleague books becomes an event on one Google Wo
 
 What happens afterwards: a booking creates or updates the slot's event (one event per slot, every booked member a guest); moving to another slot updates both events; cancelling removes the guest, and the event itself when nobody is left; saving a live study pushes a changed place, intro or Meet switch to the events; deleting a study deletes its events. Declining the Google invite does not cancel the booking; only the button in the DM does. A member whose work email is not on Slack (or when `users:read.email` is missing) still gets the Meet link and an "Add it to your calendar" link in the DM, without the emailed invite. If Google refuses (expired token, disabled API), bookings still go through without the invite and the Settings card shows the last error.
 
+## Announcements
+
+Announcements in the sidebar are posts from the research team that are not studies: a launch, a thank-you, what changed because of the answers. Write a headline (optional), the English text and the Arabic text, choose whether the bot pins it, then **Post now**, or set a date and **Schedule** (the scheduler posts it within five minutes of that time). A posted announcement opens again in the editor; **Save changes** updates the post in the channel and pins or unpins it to match. **Delete** removes it from the dashboard and, by default, the bot's post from the channel. Table `announcements` (migration `0009_announcements.sql`); admin actions `post_announcement`, `refresh_announcement` and `delete_announcement`.
+
 ## Development
 
 ```bash
@@ -112,4 +116,4 @@ Three more things colleagues can do from Slack, all behind the same profile gate
 - **Session recruitment.** The builder takes slots (start, length, place or link, seats). The post lists the slots, strikes through full ones and offers a picker; a booking confirms by DM with a cancel button, counts against the weekly hours cap, and gets a reminder DM the day before. Moving to another slot cancels the first one. Tables `session_slots` and `session_bookings`. With Google Calendar connected (set-up step 7), each booked slot is a calendar event with the booked members as guests and, per study, a Google Meet link; the bot keeps the events in step on book, move, cancel, edit and delete (`supabase/functions/_shared/google.ts`).
 - **Friction inbox.** `/friction` anywhere in Slack, or the pinned "Report a broken step" button (Friction inbox → Post the prompt), opens a form: app, what you tried, what happened, optional screenshot. The screenshot is copied into the private `friction` bucket (the Slack link is kept as a fallback). The inbox shows each report with the sender's profile; you set the status (new, fixed, duplicate, by design), keep a private note and reply by DM. Every Sunday at 09:00 Riyadh the bot posts a digest to the channel (received, fixed, open); "Send digest now" posts it on demand.
 
-Migration `supabase/migrations/0003_version_two.sql` adds the columns, tables, view change, buckets and policies. The Slack manifest gained the `commands` and `files:read` scopes and the slash command, so an existing app needs its manifest updated and a reinstall. `0004_delete_guard.sql` adds the trigger that refuses to delete a live study. `0005_answer_changes.sql` adds `studies.allow_changes` and lists the view columns explicitly. `0006_compare_sheet.sql` adds `studies.compare_url`. `0007_profile_final.sql` adds the trigger that refuses changes to a saved profile from the bot. `0008_google_meet.sql` adds `studies.meet`, the event id and Meet link on `session_slots`, the cached `participants.email` and the `google_calendar` table.
+Migration `supabase/migrations/0003_version_two.sql` adds the columns, tables, view change, buckets and policies. The Slack manifest gained the `commands` and `files:read` scopes and the slash command, so an existing app needs its manifest updated and a reinstall. `0004_delete_guard.sql` adds the trigger that refuses to delete a live study. `0005_answer_changes.sql` adds `studies.allow_changes` and lists the view columns explicitly. `0006_compare_sheet.sql` adds `studies.compare_url`. `0007_profile_final.sql` adds the trigger that refuses changes to a saved profile from the bot. `0008_google_meet.sql` adds `studies.meet`, the event id and Meet link on `session_slots`, the cached `participants.email` and the `google_calendar` table. `0009_announcements.sql` adds the `announcements` table.
