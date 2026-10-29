@@ -1,7 +1,7 @@
 // The operations behind every Slack-facing button, shared by the four functions.
 import { channelMemberIds, deleteMessage, displayName, dm, downloadFile, listUsers, permalink, pin, postEphemeral, postMessage, slack, SlackError, sleep, updateMessage, userInfo } from "./slack.ts";
 import { countResponses, db, fmtSlot, getAnnouncement, getSettings, getSlots, getStudy, hasAnswered, riyadh, setSetting, snapshot, weekKey, type Participant, type Settings, type SlotWithBookings, type Study } from "./db.ts";
-import { announcementBlocks, announcementText, frictionDigestBlocks, frictionPromptBlocks, profilePromptBlocks, profilePromptText, resultsBlocks, studyBlocks, totalsText, type SlotCalendar } from "./blocks.ts";
+import { announcementBlocks, announcementText, frictionDigestBlocks, frictionPromptBlocks, profilePromptBlocks, profilePromptText, profileReminderBlocks, profileReminderText, resultsBlocks, studyBlocks, totalsText, type SlotCalendar } from "./blocks.ts";
 import { deleteStudyEvents, syncSlotEvent, syncStudyEvents } from "./google.ts";
 
 export interface Outcome {
@@ -39,7 +39,7 @@ export async function publishStudy(id: string): Promise<Outcome> {
   if (error) throw error;
 
   const asked = await askForProfiles(settings, 40);
-  return { ok: true, message: `Posted to ${settings.channel_name}.${asked ? ` Profile form sent to ${asked} members without one.` : ""}` };
+  return { ok: true, message: `Posted to ${settings.channel_name}.${asked ? ` Profile reminder sent to ${asked} members without one.` : ""}` };
 }
 
 /** Closes the study: removes the controls, writes the closing line, stamps closed_at. */
@@ -161,7 +161,7 @@ export async function memberLeft(slackUserId: string) {
   await db.from("channel_members").update({ is_active: false, left_at: new Date().toISOString() }).eq("slack_user_id", slackUserId);
 }
 
-/** DMs the profile form to active members without a profile, at most `limit` per call, not more than once a week each. */
+/** DMs the profile reminder to active members without a profile, at most `limit` per call, not more than once a week each. */
 export async function askForProfiles(settings: Settings, limit = 50): Promise<number> {
   const { data: members, error } = await db.from("channel_members").select("slack_user_id, profile_asked_at").eq("is_active", true);
   if (error) throw error;
@@ -175,7 +175,7 @@ export async function askForProfiles(settings: Settings, limit = 50): Promise<nu
   let sent = 0;
   for (const m of due.slice(0, limit)) {
     try {
-      await dm(m.slack_user_id, `Before your first answer in ${settings.channel_name}, fill in a short profile.`, profilePromptBlocks(settings));
+      await dm(m.slack_user_id, profileReminderText(settings), profileReminderBlocks(settings));
       await db.from("channel_members").update({ profile_asked_at: new Date().toISOString() }).eq("slack_user_id", m.slack_user_id);
       sent++;
       await sleep(60);
@@ -192,7 +192,7 @@ export async function remindMissingProfiles(): Promise<Outcome> {
   // Force a fresh ask for everyone without a profile.
   await db.from("channel_members").update({ profile_asked_at: null }).eq("is_active", true);
   const sent = await askForProfiles(settings, 150);
-  return { ok: true, message: `Profile form sent by DM to ${sent} members.` };
+  return { ok: true, message: `Profile reminder sent by DM to ${sent} members.` };
 }
 
 const removedNote = (n: number) => (n ? ` Removed ${n} older post${n === 1 ? "" : "s"}.` : "");

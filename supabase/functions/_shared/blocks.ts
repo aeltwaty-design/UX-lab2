@@ -113,6 +113,15 @@ function channelLabel(settings: Settings): string {
   return settings.channel_name.replace(/^<#[A-Z0-9]+\|([^>]+)>$/i, "#$1");
 }
 
+/** The "fill in my profile" button and the privacy footer, shared by the welcome post and the reminder DM. */
+const profileButton = (): Block => ({
+  type: "actions",
+  block_id: "profile",
+  elements: [{ type: "button", style: "primary", text: pt("✍️ عبّئ ملفي · Fill in my profile"), action_id: "profile:open", value: "open" }],
+});
+const profileFooter = (): Block =>
+  ctx("🔒 لا نطلب أبداً رقم PIN أو رمز التحقق أو بيانات البطاقة أو كلمة المرور. يمكنك طلب حذف بياناتك في أي وقت.\nNever asked: PIN, OTP, card or password. You can ask to be forgotten at any time.");
+
 /** The pinned channel post, also sent by DM to newcomers: what the channel is for, then the one-time profile. Arabic first. */
 export function profilePromptBlocks(settings: Settings): Block[] {
   const ch = settings.channel_name;
@@ -126,18 +135,35 @@ export function profilePromptBlocks(settings: Settings): Block[] {
       `*🧭 What is this channel?*\nResearcher is the UX team’s assistant. This is where we collect your views on the WalaPlus and WalaOne apps through short polls, design comparisons and invitations to short sessions. Your input makes the apps better and faster 💚\n\n` +
         `*📝 Before your first answer: fill in your profile once (one minute)*\nName, age band, gender, phone type, team and the apps you use. All fields are required; it is saved once and cannot be changed afterwards, so check it before you save ✅\n🔗 Every answer you give in ${ch} is linked to your profile, so we can follow up and see how each team experiences the apps.`,
     ),
-    {
-      type: "actions",
-      block_id: "profile",
-      elements: [{ type: "button", style: "primary", text: pt("✍️ عبّئ ملفي · Fill in my profile"), action_id: "profile:open", value: "open" }],
-    },
-    ctx("🔒 لا نطلب أبداً رقم PIN أو رمز التحقق أو بيانات البطاقة أو كلمة المرور. يمكنك طلب حذف بياناتك في أي وقت.\nNever asked: PIN, OTP, card or password. You can ask to be forgotten at any time."),
+    profileButton(),
+    profileFooter(),
   ];
 }
 
 /** The notification line of the welcome post and DM. */
 export function profilePromptText(settings: Settings): string {
   return `أهلاً بك في ${settings.channel_name} · Welcome to ${settings.channel_name}`;
+}
+
+/** The reminder DM for a member without a profile: sent when a study goes live and from "Remind N without a profile". Arabic first. */
+export function profileReminderBlocks(settings: Settings): Block[] {
+  const ch = settings.channel_name;
+  return [
+    { type: "header", text: pt("⏰ تذكير: ملفك لم يُعبّأ بعد") },
+    md(
+      `*📝 عبّئ ملفك مرة واحدة (دقيقة واحدة)*\nللمشاركة في استطلاعات ${ch} ومقارنات التصميم والجلسات، تحتاج أولاً إلى تعبئة ملفك. اضغط الزر وراجع بياناتك قبل الحفظ، فهو يُحفظ مرة واحدة ولا يمكن تغييره ✅\n🔗 كل إجابة ترتبط بملفك، حتى نتابع معك ونفهم تجربة كل فريق.`,
+    ),
+    md(
+      `*⏰ Reminder: your profile is still missing*\nTo take part in the polls, design comparisons and sessions in ${ch}, fill in your profile first (one minute, once only). Tap the button and check your details before you save: it is saved once and cannot be changed ✅\n🔗 Every answer is linked to your profile, so we can follow up and see how each team experiences the apps.`,
+    ),
+    profileButton(),
+    profileFooter(),
+  ];
+}
+
+/** The notification line of the reminder DM. */
+export function profileReminderText(settings: Settings): string {
+  return `⏰ تذكير: عبّئ ملفك للمشاركة في ${settings.channel_name} · Reminder: fill in your profile to take part in ${settings.channel_name}`;
 }
 
 export interface Pending {
