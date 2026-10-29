@@ -108,20 +108,36 @@ export function studyBlocks(study: Study, settings: Settings, closed = false, an
   return blocks;
 }
 
-/** Channel or DM message asking a member to fill in the profile. */
+/** "#ux-hub" from the channel setting, whether it was typed as a name or pasted as a Slack mention. */
+function channelLabel(settings: Settings): string {
+  return settings.channel_name.replace(/^<#[A-Z0-9]+\|([^>]+)>$/i, "#$1");
+}
+
+/** The pinned channel post, also sent by DM to newcomers: what the channel is for, then the one-time profile. Arabic first. */
 export function profilePromptBlocks(settings: Settings): Block[] {
+  const ch = settings.channel_name;
   return [
-    md(bi(
-      `*Before your first answer, fill in a short profile (one minute, once).*\nName, age band, gender, phone type, team and the apps you use; all fields are required. It is saved once and cannot be changed afterwards, so check it before you save. Every answer you give in ${settings.channel_name} is linked to it, so we can follow up and see how each group experiences the apps.`,
-      `*قبل أول إجابة، عبّئ ملفاً قصيراً (دقيقة واحدة، مرة واحدة).*\nالاسم والفئة العمرية والجنس ونوع الهاتف والفريق والتطبيقات؛ كل الحقول مطلوبة. يُحفظ مرة واحدة ولا يمكن تغييره بعد ذلك، فراجعه قبل الحفظ. كل إجابة تقدّمها مرتبطة به.`,
-    )),
+    { type: "header", text: pt(`👋 أهلاً بك في ${channelLabel(settings)}`) },
+    md(
+      `*🧭 ما هذه القناة؟*\n«الباحث» هو مساعد فريق تجربة المستخدم. هنا نجمع آراءكم عن تطبيقَي ولاء بلس وولاء ون عبر استطلاعات قصيرة، ومقارنات بين التصميمات، ودعوات لجلسات قصيرة. مشاركتك تجعل التطبيقات أفضل وأسرع 💚\n\n` +
+        `*📝 قبل أول مشاركة: عبّئ ملفك مرة واحدة (دقيقة واحدة)*\nالاسم، والفئة العمرية، والجنس، ونوع الهاتف، والفريق، والتطبيقات التي تستخدمها. كل الحقول مطلوبة، ويُحفظ الملف مرة واحدة ولا يمكن تغييره بعد ذلك، فراجعه قبل الحفظ ✅\n🔗 كل إجابة تقدّمها في ${ch} ترتبط بملفك، حتى نتابع معك ونفهم تجربة كل فريق.`,
+    ),
+    md(
+      `*🧭 What is this channel?*\nResearcher is the UX team’s assistant. This is where we collect your views on the WalaPlus and WalaOne apps through short polls, design comparisons and invitations to short sessions. Your input makes the apps better and faster 💚\n\n` +
+        `*📝 Before your first answer: fill in your profile once (one minute)*\nName, age band, gender, phone type, team and the apps you use. All fields are required; it is saved once and cannot be changed afterwards, so check it before you save ✅\n🔗 Every answer you give in ${ch} is linked to your profile, so we can follow up and see how each team experiences the apps.`,
+    ),
     {
       type: "actions",
       block_id: "profile",
-      elements: [{ type: "button", style: "primary", text: pt("Fill in my profile · عبّئ ملفي"), action_id: "profile:open", value: "open" }],
+      elements: [{ type: "button", style: "primary", text: pt("✍️ عبّئ ملفي · Fill in my profile"), action_id: "profile:open", value: "open" }],
     },
-    ctx("Never asked: PIN, OTP, card or password. You can ask to be forgotten at any time."),
+    ctx("🔒 لا نطلب أبداً رقم PIN أو رمز التحقق أو بيانات البطاقة أو كلمة المرور. يمكنك طلب حذف بياناتك في أي وقت.\nNever asked: PIN, OTP, card or password. You can ask to be forgotten at any time."),
   ];
+}
+
+/** The notification line of the welcome post and DM. */
+export function profilePromptText(settings: Settings): string {
+  return `أهلاً بك في ${settings.channel_name} · Welcome to ${settings.channel_name}`;
 }
 
 export interface Pending {

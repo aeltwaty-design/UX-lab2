@@ -103,7 +103,7 @@ export default function Participants() {
             <Button icon="bell" loading={busy === "remind_missing_profiles"} disabled={!stats.missing} onClick={slack("remind_missing_profiles")}>
               Remind {stats.missing} without a profile
             </Button>
-            <Button variant="primary" icon="send" loading={busy === "repost_profile"} onClick={slack("repost_profile")}>Re-post profile form</Button>
+            <Button variant="primary" icon="send" loading={busy === "repost_profile"} onClick={slack("repost_profile")}>Update profile post</Button>
           </>
         }
       />
@@ -126,7 +126,7 @@ export default function Participants() {
             }
           >
             {groups.length === 0 ? (
-              <div className="text-[13px] text-muted">No profiles yet. Re-post the form to the channel.</div>
+              <div className="text-[13px] text-muted">No profiles yet. Put the profile post in the channel.</div>
             ) : (
               groups.map((g) => <Bar key={g.label} label={g.label} count={g.count} total={stats.size} tone="one" />)
             )}

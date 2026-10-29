@@ -241,10 +241,10 @@ export default function Settings() {
                 Sync channel members
               </Button>
               <Button className="w-full" icon="send" loading={busy === "repost"} onClick={() => run("repost", async () => (await runAdminAction({ action: "repost_profile" })).message)}>
-                Re-post the profile form
+                Update the pinned profile post
               </Button>
             </div>
-            <p className="text-[12px] text-muted mt-3">Members are synced every hour as well. Re-posting replaces the pinned "fill in your profile" message in the channel.</p>
+            <p className="text-[12px] text-muted mt-3">Members are synced every hour as well. Updating rewrites the pinned welcome and profile post in place, so its thread and pin stay; if it is gone, a fresh one is posted and pinned.</p>
           </Card>
           <Card title="Delete a bot post">
             <p className="text-[12.5px] text-muted mb-3">In Slack, open the message menu (More actions) and choose Copy link. Only the bot's own posts can be deleted.</p>

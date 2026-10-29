@@ -1,7 +1,7 @@
 // The operations behind every Slack-facing button, shared by the four functions.
 import { channelMemberIds, deleteMessage, displayName, dm, downloadFile, listUsers, permalink, pin, postEphemeral, postMessage, slack, SlackError, sleep, updateMessage, userInfo } from "./slack.ts";
 import { countResponses, db, fmtSlot, getAnnouncement, getSettings, getSlots, getStudy, hasAnswered, riyadh, setSetting, snapshot, weekKey, type Participant, type Settings, type SlotWithBookings, type Study } from "./db.ts";
-import { announcementBlocks, announcementText, frictionDigestBlocks, frictionPromptBlocks, profilePromptBlocks, resultsBlocks, studyBlocks, totalsText, type SlotCalendar } from "./blocks.ts";
+import { announcementBlocks, announcementText, frictionDigestBlocks, frictionPromptBlocks, profilePromptBlocks, profilePromptText, resultsBlocks, studyBlocks, totalsText, type SlotCalendar } from "./blocks.ts";
 import { deleteStudyEvents, syncSlotEvent, syncStudyEvents } from "./google.ts";
 
 export interface Outcome {
@@ -195,19 +195,40 @@ export async function remindMissingProfiles(): Promise<Outcome> {
   return { ok: true, message: `Profile form sent by DM to ${sent} members.` };
 }
 
-/** Posts (and pins) the profile prompt in the channel, after removing the previous one. */
+const removedNote = (n: number) => (n ? ` Removed ${n} older post${n === 1 ? "" : "s"}.` : "");
+
+/**
+ * Puts the current profile post in the channel. The pinned post is rewritten in place when it still exists, so its
+ * thread and pin stay; when it is gone, or the channel changed, a fresh one is posted and pinned. Older copies are removed.
+ */
 export async function repostProfile(): Promise<Outcome> {
   const settings = await getSettings();
   const channel = needChannel(settings);
-  const old = [settings.profile_post_ts, ...(settings.profile_posts_old ?? [])].filter((ts): ts is string => Boolean(ts));
+  const blocks = profilePromptBlocks(settings);
+  const text = profilePromptText(settings);
+  const older = settings.profile_posts_old ?? [];
+  let updated = false;
+  if (settings.profile_post_ts) {
+    try {
+      await updateMessage(channel, settings.profile_post_ts, text, blocks);
+      updated = true;
+    } catch {
+      /* the post is gone, or lives in a previous channel: post afresh below */
+    }
+  }
   let removed = 0;
-  for (const ts of old) if (await deleteMessage(channel, ts)) removed++;
-  const r = await postMessage(channel, "Fill in your research profile · عبّئ ملفك", profilePromptBlocks(settings));
+  if (updated) {
+    await pin(channel, settings.profile_post_ts as string);
+    for (const ts of older) if (await deleteMessage(channel, ts)) removed++;
+    if (older.length) await setSetting("profile_posts_old", []);
+    return { ok: true, message: `The pinned profile post in ${settings.channel_name} is updated.${removedNote(removed)}` };
+  }
+  for (const ts of [settings.profile_post_ts ?? "", ...older].filter(Boolean)) if (await deleteMessage(channel, ts)) removed++;
+  const r = await postMessage(channel, text, blocks);
   await pin(channel, r.ts);
   await setSetting("profile_post_ts", r.ts);
-  if (settings.profile_posts_old?.length) await setSetting("profile_posts_old", []);
-  const note = removed ? ` Removed ${removed} older post${removed === 1 ? "" : "s"}.` : "";
-  return { ok: true, message: `Profile form posted and pinned in ${settings.channel_name}.${note}` };
+  if (older.length) await setSetting("profile_posts_old", []);
+  return { ok: true, message: `Profile post posted and pinned in ${settings.channel_name}.${removedNote(removed)}` };
 }
 
 /** Deletes one of the bot's own posts, given a Slack message link (or a bare message ts in the channel). */

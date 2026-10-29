@@ -80,7 +80,7 @@ Open `supabase/cron.sql`, replace `PROJECT_REF`, run it in the SQL editor (alrea
 
 ### 6. First post
 
-Dashboard → Participants → **Re-post profile form**. It posts and pins the profile prompt in the channel. Then create the first poll, schedule it, and watch the answers arrive.
+Dashboard → Participants → **Update profile post**. It posts and pins the welcome and profile post in the channel (Arabic first, then English); after a wording change the same button rewrites it in place. Then create the first poll, schedule it, and watch the answers arrive.
 
 ### 7. Google Calendar and Meet (optional, for session recruitment)
 

@@ -1,7 +1,7 @@
 // Slack Events API endpoint: keeps the channel roster current and asks newcomers for a profile.
 import { dm, displayName, userInfo, verifySlack } from "../_shared/slack.ts";
 import { getSettings } from "../_shared/db.ts";
-import { profilePromptBlocks } from "../_shared/blocks.ts";
+import { profilePromptBlocks, profilePromptText } from "../_shared/blocks.ts";
 import { memberJoined, memberLeft } from "../_shared/actions.ts";
 
 interface Event {
@@ -31,7 +31,7 @@ Deno.serve(async (req) => {
         /* users:read missing */
       }
       await memberJoined(ev.user, name);
-      await dm(ev.user, `Welcome to ${settings.channel_name}. Before your first answer, fill in a short profile.`, profilePromptBlocks(settings));
+      await dm(ev.user, profilePromptText(settings), profilePromptBlocks(settings));
     } else if (ev?.type === "member_left_channel" && ev.user && ev.channel) {
       const settings = await getSettings();
       if (ev.channel === settings.channel_id) await memberLeft(ev.user);
