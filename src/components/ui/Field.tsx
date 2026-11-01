@@ -41,17 +41,21 @@ export function Toggle({
   onChange,
   label,
   hint,
+  ariaLabel,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
-  label: ReactNode;
+  label?: ReactNode;
   hint?: ReactNode;
+  /** For a switch without a visible label, such as one in a table row. */
+  ariaLabel?: string;
 }) {
   return (
     <label className="flex items-start gap-3 cursor-pointer select-none">
       <span
         role="switch"
         aria-checked={checked}
+        aria-label={ariaLabel}
         onClick={() => onChange(!checked)}
         className={clsx(
           "mt-0.5 relative inline-block h-5 w-9 rounded-full transition-colors shrink-0",
@@ -65,10 +69,12 @@ export function Toggle({
           )}
         />
       </span>
-      <span>
-        <span className="block text-[13px] text-ink">{label}</span>
-        {hint && <span className="block text-[12px] text-muted">{hint}</span>}
-      </span>
+      {(label || hint) && (
+        <span>
+          {label && <span className="block text-[13px] text-ink">{label}</span>}
+          {hint && <span className="block text-[12px] text-muted">{hint}</span>}
+        </span>
+      )}
     </label>
   );
 }

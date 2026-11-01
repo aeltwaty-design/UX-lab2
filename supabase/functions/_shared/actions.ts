@@ -56,6 +56,13 @@ export async function closeStudy(id: string): Promise<Outcome> {
   return { ok: true, message: `Closed with ${answered} ${sessions ? "bookings" : "answers"}. Write the results post next.` };
 }
 
+/** Slack ids of the members excluded from reminder DMs on the Participants page. */
+async function reminderExclusions(): Promise<Set<string>> {
+  const { data, error } = await db.from("channel_members").select("slack_user_id").eq("no_reminders", true);
+  if (error) throw error;
+  return new Set(((data ?? []) as { slack_user_id: string }[]).map((r) => r.slack_user_id));
+}
+
 /** Members in the study's audience who have a profile but no answer (or booking) yet. */
 async function nonResponders(study: Study): Promise<Participant[]> {
   const { data: people, error } = await db.from("participants").select("*").is("deleted_at", null);
@@ -73,11 +80,13 @@ async function nonResponders(study: Study): Promise<Participant[]> {
   });
 }
 
-/** DMs everyone in the audience who has not answered. */
+/** DMs everyone in the audience who has not answered, except members excluded from reminders. */
 export async function remindStudy(id: string): Promise<Outcome> {
   const [study, settings] = await Promise.all([getStudy(id), getSettings()]);
   if (study.status !== "live") return { ok: false, message: "Only a live study can be reminded." };
-  const people = await nonResponders(study);
+  const [all, excluded] = await Promise.all([nonResponders(study), reminderExclusions()]);
+  const people = all.filter((p) => !excluded.has(p.slack_user_id));
+  const skipped = all.length - people.length;
   const link = study.slack_channel_id && study.slack_ts ? await permalink(study.slack_channel_id, study.slack_ts) : "";
   const sessions = study.type === "session_recruitment";
   let sent = 0;
@@ -96,7 +105,7 @@ export async function remindStudy(id: string): Promise<Outcome> {
   }
   const { error } = await db.from("studies").update({ reminder_sent_at: new Date().toISOString() }).eq("id", id);
   if (error) throw error;
-  return { ok: true, message: `Reminded ${sent} of ${people.length} by DM.` };
+  return { ok: true, message: `Reminded ${sent} of ${people.length} by DM.${skipped ? ` ${skipped} excluded from reminders.` : ""}` };
 }
 
 /** Posts the results post to the channel and marks the study reported. */
@@ -161,9 +170,12 @@ export async function memberLeft(slackUserId: string) {
   await db.from("channel_members").update({ is_active: false, left_at: new Date().toISOString() }).eq("slack_user_id", slackUserId);
 }
 
-/** DMs the profile reminder to active members without a profile, at most `limit` per call, not more than once a week each. */
+/**
+ * DMs the profile reminder to active members without a profile, at most `limit` per call, not more than once a week each.
+ * Members excluded from reminders on the Participants page are skipped.
+ */
 export async function askForProfiles(settings: Settings, limit = 50): Promise<number> {
-  const { data: members, error } = await db.from("channel_members").select("slack_user_id, profile_asked_at").eq("is_active", true);
+  const { data: members, error } = await db.from("channel_members").select("slack_user_id, profile_asked_at").eq("is_active", true).eq("no_reminders", false);
   if (error) throw error;
   const { data: people, error: e2 } = await db.from("participants").select("slack_user_id").is("deleted_at", null);
   if (e2) throw e2;

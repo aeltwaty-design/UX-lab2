@@ -5,29 +5,35 @@ import { StatTile } from "@/components/StatTile";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
-import { Input, Select } from "@/components/ui/Field";
+import { Input, Select, Toggle } from "@/components/ui/Field";
 import { Spinner } from "@/components/ui/Empty";
 import { useToast } from "@/components/ui/Toast";
-import { forgetParticipant, listChannelMembers, listParticipants, participantResponseCounts, runAdminAction } from "@/data/queries";
+import { forgetParticipant, listChannelMembers, listParticipants, listReminderExclusions, participantResponseCounts, runAdminAction, setReminders } from "@/data/queries";
 import { fmtDate } from "@/lib/format";
 import { groupBy, profileOf, SPLITS, type SplitKey } from "@/lib/results";
 import type { ChannelMember, Participant } from "@/lib/types";
+
+const MEMBER_COLS = "grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_70px_70px_80px_110px_60px_90px_70px_80px]";
 
 export default function Participants() {
   const toast = useToast();
   const [people, setPeople] = useState<Participant[] | null>(null);
   const [members, setMembers] = useState<ChannelMember[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
+  /** Slack ids of members who get no reminder DMs. */
+  const [off, setOff] = useState<Set<string>>(new Set());
   const [q, setQ] = useState("");
+  const [qMissing, setQMissing] = useState("");
   const [group, setGroup] = useState<SplitKey>("team");
   const [busy, setBusy] = useState<string | null>(null);
 
   function load() {
-    Promise.all([listParticipants(), listChannelMembers(), participantResponseCounts()])
-      .then(([p, m, c]) => {
+    Promise.all([listParticipants(), listChannelMembers(), participantResponseCounts(), listReminderExclusions()])
+      .then(([p, m, c, x]) => {
         setPeople(p);
         setMembers(m);
         setCounts(c);
+        setOff(new Set(x));
       })
       .catch((e: Error) => toast(e.message, "error"));
   }
@@ -37,14 +43,16 @@ export default function Participants() {
     const p = people ?? [];
     const withProfile = new Set(p.map((x) => x.slack_user_id));
     const monthAgo = Date.now() - 30 * 86_400_000;
-    const missing = members.filter((m) => !withProfile.has(m.slack_user_id));
+    const missing = members.filter((m) => !withProfile.has(m.slack_user_id)).sort((a, b) => a.name.localeCompare(b.name));
+    const toRemind = missing.filter((m) => !off.has(m.slack_user_id)).length;
     return {
       size: p.length,
       missing: missing.length,
+      toRemind,
       month: p.filter((x) => new Date(x.profile_at).getTime() > monthAgo).length,
-      missingNames: missing.map((m) => m.name),
+      missingMembers: missing,
     };
-  }, [people, members]);
+  }, [people, members, off]);
 
   const weeks = useMemo(() => {
     const out: { label: string; n: number }[] = [];
@@ -82,6 +90,25 @@ export default function Participants() {
       setBusy(null);
     }
   }
+  /** Switches reminder DMs on or off for one member, at once on screen, then in the database. */
+  async function toggleReminders(slackUserId: string, name: string, on: boolean) {
+    const flip = (wantOn: boolean) =>
+      setOff((cur) => {
+        const next = new Set(cur);
+        if (wantOn) next.delete(slackUserId);
+        else next.add(slackUserId);
+        return next;
+      });
+    flip(on);
+    try {
+      await setReminders(slackUserId, name, on);
+      toast(on ? `${name} gets reminder DMs again.` : `${name} will not get reminder DMs.`);
+    } catch (e) {
+      flip(!on);
+      toast((e as Error).message, "error");
+    }
+  }
+
   const slack = (action: "repost_profile" | "remind_missing_profiles" | "sync_members") => () =>
     act(action, async () => {
       const r = await runAdminAction({ action });
@@ -96,12 +123,12 @@ export default function Participants() {
     <>
       <PageHeader
         title="Participants"
-        sub="Everyone in the channel who has filled in a profile. No profile, no answers: the bot asks for it first. A saved profile is final; to correct one, forget the member and they fill it in again."
+        sub="Everyone in the channel who has filled in a profile. No profile, no answers: the bot asks for it first. A saved profile is final; to correct one, forget the member and they fill it in again. Switch Reminders off for anyone who should not get reminder DMs."
         actions={
           <>
             <Button icon="users" loading={busy === "sync_members"} onClick={slack("sync_members")}>Sync channel</Button>
-            <Button icon="bell" loading={busy === "remind_missing_profiles"} disabled={!stats.missing} onClick={slack("remind_missing_profiles")}>
-              Remind {stats.missing} without a profile
+            <Button icon="bell" loading={busy === "remind_missing_profiles"} disabled={!stats.toRemind} onClick={slack("remind_missing_profiles")}>
+              Remind {stats.toRemind} without a profile
             </Button>
             <Button variant="primary" icon="send" loading={busy === "repost_profile"} onClick={slack("repost_profile")}>Update profile post</Button>
           </>
@@ -110,7 +137,12 @@ export default function Participants() {
       <div className="px-7 pb-10 space-y-4">
         <div className="grid grid-cols-3 gap-3">
           <StatTile label="With a profile" value={stats.size} tone="brand" sub={`of ${members.length || "?"} channel members`} />
-          <StatTile label="Missing a profile" value={stats.missing} tone={stats.missing ? "warn" : "default"} sub="cannot answer until they fill it in" />
+          <StatTile
+            label="Missing a profile"
+            value={stats.missing}
+            tone={stats.missing ? "warn" : "default"}
+            sub={stats.missing > stats.toRemind ? `${stats.missing - stats.toRemind} excluded from reminders` : "cannot answer until they fill it in"}
+          />
           <StatTile label="Joined last 30 days" value={stats.month} tone="one" sub="profiles completed" />
         </div>
 
@@ -141,21 +173,39 @@ export default function Participants() {
                 </div>
               ))}
             </div>
-            {stats.missingNames.length > 0 && (
-              <div className="mt-3 text-[12px] text-muted">
-                Without a profile: {stats.missingNames.slice(0, 12).join(", ")}
-                {stats.missingNames.length > 12 && ` and ${stats.missingNames.length - 12} more`}.
-              </div>
-            )}
           </Card>
         </div>
 
+        {stats.missing > 0 && (
+          <Card
+            title={`Without a profile (${stats.missing})`}
+            action={<Input className="w-56 h-8" placeholder="Search name" value={qMissing} onChange={(e) => setQMissing(e.target.value)} />}
+          >
+            <p className="text-[12px] text-muted mb-3">
+              Reminders on: the bot sends the profile reminder DM when a study goes live (once a week at most) and when you press Remind. Switch it off to leave someone out.
+            </p>
+            <div className="grid grid-cols-3 gap-x-6 gap-y-1.5 max-h-72 overflow-y-auto pr-1">
+              {stats.missingMembers
+                .filter((m) => !qMissing.trim() || m.name.toLowerCase().includes(qMissing.trim().toLowerCase()))
+                .map((m) => {
+                  const on = !off.has(m.slack_user_id);
+                  return (
+                    <div key={m.slack_user_id} className="flex items-center justify-between gap-2 min-w-0 py-0.5">
+                      <span className={on ? "text-[12.5px] text-ink truncate" : "text-[12.5px] text-muted line-through truncate"}>{m.name || m.slack_user_id}</span>
+                      <Toggle checked={on} onChange={(v) => void toggleReminders(m.slack_user_id, m.name, v)} ariaLabel={`Reminders for ${m.name}`} />
+                    </div>
+                  );
+                })}
+            </div>
+          </Card>
+        )}
+
         <Card title={`Members (${visible.length})`} action={<Input className="w-64 h-8" placeholder="Search name, team, device" value={q} onChange={(e) => setQ(e.target.value)} />} pad={false}>
-          <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_70px_70px_80px_110px_60px_90px_80px] gap-2 px-4 h-8 items-center text-[11px] font-semibold uppercase tracking-[0.04em] text-muted bg-fill border-b border-line-2">
-            <div>Name</div><div>Team</div><div>Age</div><div>Gender</div><div>Device</div><div>Apps</div><div>Lang</div><div>Profile</div><div className="text-right">Answers</div>
+          <div className={`grid ${MEMBER_COLS} gap-2 px-4 h-8 items-center text-[11px] font-semibold uppercase tracking-[0.04em] text-muted bg-fill border-b border-line-2`}>
+            <div>Name</div><div>Team</div><div>Age</div><div>Gender</div><div>Device</div><div>Apps</div><div>Lang</div><div>Profile</div><div className="text-right">Answers</div><div className="text-right">Reminders</div>
           </div>
           {visible.map((p) => (
-            <div key={p.id} className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_70px_70px_80px_110px_60px_90px_80px] gap-2 px-4 py-2 items-center text-[12.5px] border-b border-line-2 last:border-b-0 group">
+            <div key={p.id} className={`grid ${MEMBER_COLS} gap-2 px-4 py-2 items-center text-[12.5px] border-b border-line-2 last:border-b-0 group`}>
               <div className="text-ink truncate flex items-center gap-2">
                 {p.name}
                 <button
@@ -185,6 +235,9 @@ export default function Participants() {
               <div className="text-ink-2 uppercase">{p.language}</div>
               <div className="text-muted tabular-nums">{fmtDate(p.profile_at)}</div>
               <div className="text-ink text-right tabular-nums">{counts[p.id] ?? 0}</div>
+              <div className="flex justify-end">
+                <Toggle checked={!off.has(p.slack_user_id)} onChange={(v) => void toggleReminders(p.slack_user_id, p.name, v)} ariaLabel={`Reminders for ${p.name}`} />
+              </div>
             </div>
           ))}
           {visible.length === 0 && <div className="px-4 py-8 text-[13px] text-muted text-center">No one matches.</div>}

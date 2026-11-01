@@ -190,6 +190,8 @@ export interface ChannelMember {
   is_active: boolean;
   joined_at: string;
   left_at: string | null;
+  /** True: the bot sends this member no reminder DMs (profile reminder, study reminder). */
+  no_reminders: boolean;
 }
 
 export interface Settings {

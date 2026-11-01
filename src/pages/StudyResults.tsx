@@ -11,7 +11,7 @@ import { ConfirmDialog } from "@/components/ui/Dialog";
 import { Empty, Spinner } from "@/components/ui/Empty";
 import { Select, Toggle } from "@/components/ui/Field";
 import { useToast } from "@/components/ui/Toast";
-import { getResultsPost, getStudy, listBookings, listParticipants, listResponses, runAdminAction } from "@/data/queries";
+import { getResultsPost, getStudy, listBookings, listParticipants, listReminderExclusions, listResponses, runAdminAction } from "@/data/queries";
 import { daysBetween, fmtDate, fmtDateTime, fmtSlot, pct, typeLabel } from "@/lib/format";
 import { answerSummary, groupBy, scaleMean, segmentOf, SPLITS, tally, textAnswers, type SplitKey } from "@/lib/results";
 import { STATUS_LABEL, type Participant, type Response, type ResultsPost, type SessionBooking, type StudyWithQuestions } from "@/lib/types";
@@ -28,6 +28,8 @@ export default function StudyResults() {
   const [bookings, setBookings] = useState<SessionBooking[]>([]);
   const [panel, setPanel] = useState<Participant[]>([]);
   const [post, setPost] = useState<ResultsPost | null>(null);
+  /** Slack ids of members excluded from reminder DMs on the Participants page. */
+  const [noRemind, setNoRemind] = useState<Set<string>>(new Set());
   const [split, setSplit] = useState<SplitKey>("none");
   const [qIndex, setQIndex] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
@@ -38,17 +40,19 @@ export default function StudyResults() {
     getStudy(id)
       .then(async (s) => {
         const sessions = s.type === "session_recruitment";
-        const [r, b, p, rp] = await Promise.all([
+        const [r, b, p, rp, x] = await Promise.all([
           sessions ? Promise.resolve([] as Response[]) : listResponses(id),
           sessions ? listBookings(id) : Promise.resolve([] as SessionBooking[]),
           listParticipants(),
           getResultsPost(id),
+          listReminderExclusions(),
         ]);
         setStudy(s);
         setResponses(r);
         setBookings(b);
         setPanel(p);
         setPost(rp);
+        setNoRemind(new Set(x));
       })
       .catch((e: Error) => toast(e.message, "error"));
   }, [id, toast]);
@@ -114,6 +118,7 @@ export default function StudyResults() {
   const reach = eligible.length ? pct(answered, eligible.length) : 0;
   const answeredIds = new Set(sessions ? bookings.map((b) => b.participant_id) : responses.map((r) => r.participant_id));
   const missing = eligible.filter((p) => !answeredIds.has(p.id));
+  const toRemind = missing.filter((p) => !noRemind.has(p.slack_user_id));
   const isLive = study.status === "live";
   const days =
     isLive && study.close_at ? Math.max(0, daysBetween(now, study.close_at)) : study.closed_at ? daysBetween(study.closed_at, now) : null;
@@ -164,8 +169,8 @@ export default function StudyResults() {
             )}
             {isLive && (
               <>
-                <Button icon="bell" loading={busy === "remind"} disabled={!missing.length} onClick={slack("remind")}>
-                  Remind {missing.length} by DM
+                <Button icon="bell" loading={busy === "remind"} disabled={!toRemind.length} onClick={slack("remind")}>
+                  Remind {toRemind.length} by DM
                 </Button>
                 <Button variant="danger" loading={busy === "close_now"} onClick={slack("close_now")}>Close now</Button>
               </>
@@ -414,11 +419,18 @@ export default function StudyResults() {
                   <>
                     <div className="flex flex-wrap gap-1.5">
                       {missing.slice(0, 30).map((p) => (
-                        <Chip key={p.id} tone="neutral">{p.name}</Chip>
+                        <Chip key={p.id} tone="neutral">
+                          {noRemind.has(p.slack_user_id) ? <span className="line-through opacity-70" title="Excluded from reminders">{p.name}</span> : p.name}
+                        </Chip>
                       ))}
                       {missing.length > 30 && <Chip tone="neutral">+{missing.length - 30} more</Chip>}
                     </div>
-                    {isLive && <p className="text-[11.5px] text-muted mt-2">The reminder DM links to the post. One reminder per study, sent by you.</p>}
+                    {isLive && (
+                      <p className="text-[11.5px] text-muted mt-2">
+                        The reminder DM links to the post. One reminder per study, sent by you.
+                        {missing.length > toRemind.length && ` ${missing.length - toRemind.length} excluded from reminders on the Participants page (struck through) get no DM.`}
+                      </p>
+                    )}
                   </>
                 )}
               </Card>

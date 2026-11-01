@@ -273,6 +273,25 @@ export async function listChannelMembers(): Promise<ChannelMember[]> {
   return (data ?? []) as ChannelMember[];
 }
 
+/** Slack ids of members excluded from reminder DMs, whether or not they are still in the channel. */
+export async function listReminderExclusions(): Promise<string[]> {
+  const { data, error } = await supabase.from("channel_members").select("slack_user_id").eq("no_reminders", true);
+  if (error) fail(error);
+  return ((data ?? []) as { slack_user_id: string }[]).map((r) => r.slack_user_id);
+}
+
+/** Turns reminder DMs off (or back on) for one member. A member the roster does not know yet gets a row of their own. */
+export async function setReminders(slackUserId: string, name: string, on: boolean): Promise<void> {
+  const { data, error } = await supabase.from("channel_members").update({ no_reminders: !on }).eq("slack_user_id", slackUserId).select("slack_user_id");
+  if (error) fail(error);
+  if (data?.length) return;
+  // Not on the roster: the hourly sync marks the row active once it sees the member in the channel.
+  const ins = await supabase
+    .from("channel_members")
+    .insert({ slack_user_id: slackUserId, name, is_active: false, left_at: new Date().toISOString(), no_reminders: !on });
+  if (ins.error) fail(ins.error);
+}
+
 export async function forgetParticipant(id: string): Promise<void> {
   const { error } = await supabase.rpc("forget_participant", { p_id: id });
   if (error) fail(error);
