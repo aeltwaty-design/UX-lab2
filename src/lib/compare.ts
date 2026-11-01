@@ -80,7 +80,7 @@ export async function composeComparison(options: CompareOption[]): Promise<Blob>
       ctx.fillStyle = "#06352a";
       ctx.textAlign = "center";
       ctx.fillText(LETTERS[i]!, x + r, y + BAND / 2 + 1);
-      const label = [o.label_en.trim(), o.label_ar.trim()].filter(Boolean).join(" · ");
+      const label = [o.label_ar.trim(), o.label_en.trim()].filter(Boolean).join(" · "); // Arabic first, like the post
       if (label) {
         ctx.fillStyle = "#111317";
         ctx.textAlign = "left";

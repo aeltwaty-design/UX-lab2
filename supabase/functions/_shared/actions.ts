@@ -1,7 +1,7 @@
 // The operations behind every Slack-facing button, shared by the four functions.
 import { channelMemberIds, deleteMessage, displayName, dm, downloadFile, listUsers, permalink, pin, postEphemeral, postMessage, slack, SlackError, sleep, updateMessage, userInfo } from "./slack.ts";
 import { countResponses, db, fmtSlot, getAnnouncement, getSettings, getSlots, getStudy, hasAnswered, riyadh, setSetting, snapshot, weekKey, type Participant, type Settings, type SlotWithBookings, type Study } from "./db.ts";
-import { announcementBlocks, announcementText, frictionDigestBlocks, frictionPromptBlocks, profilePromptBlocks, profilePromptText, profileReminderBlocks, profileReminderText, resultsBlocks, studyBlocks, totalsText, type SlotCalendar } from "./blocks.ts";
+import { announcementBlocks, announcementText, frictionDigestBlocks, frictionPromptBlocks, profilePromptBlocks, profilePromptText, profileReminderBlocks, profileReminderText, resultsBlocks, resultsText, studyBlocks, studyText, totalsText, type SlotCalendar } from "./blocks.ts";
 import { deleteStudyEvents, syncSlotEvent, syncStudyEvents } from "./google.ts";
 
 export interface Outcome {
@@ -30,8 +30,7 @@ export async function publishStudy(id: string): Promise<Outcome> {
     if (images.length < 2) return { ok: false, message: "A preference test needs at least two images." };
   } else if (!study.questions.length) return { ok: false, message: "The study has no questions." };
 
-  const text = `${study.title_en}${study.title_ar ? ` · ${study.title_ar}` : ""}`;
-  const r = await postMessage(channel, text, studyBlocks(study, settings, false, 0, slots));
+  const r = await postMessage(channel, studyText(study), studyBlocks(study, settings, false, 0, slots));
   const { error } = await db
     .from("studies")
     .update({ status: "live", published_at: new Date().toISOString(), slack_channel_id: channel, slack_ts: r.ts })
@@ -50,7 +49,7 @@ export async function closeStudy(id: string): Promise<Outcome> {
   const slots = sessions ? await getSlots(id) : [];
   const answered = sessions ? slots.reduce((n, s) => n + s.booked, 0) : await countResponses(id);
   if (study.slack_channel_id && study.slack_ts)
-    await updateMessage(study.slack_channel_id, study.slack_ts, `${study.title_en} · closed`, studyBlocks(study, settings, true, answered, slots));
+    await updateMessage(study.slack_channel_id, study.slack_ts, studyText(study, true), studyBlocks(study, settings, true, answered, slots));
   const { error } = await db.from("studies").update({ status: "closed", closed_at: new Date().toISOString() }).eq("id", id);
   if (error) throw error;
   return { ok: true, message: `Closed with ${answered} ${sessions ? "bookings" : "answers"}. Write the results post next.` };
@@ -122,7 +121,7 @@ export async function postResults(id: string): Promise<Outcome> {
   const rows = (responses ?? []) as { answers: { question_id: string; option_id: string | null; value_num: number | null }[] }[];
   const totals = post.include_totals ? totalsText(study, rows, settings.small_group) : null;
   const answered = study.type === "session_recruitment" ? (await getSlots(id)).reduce((n, s) => n + s.booked, 0) : rows.length;
-  const r = await postMessage(channel, `Results: ${study.title_en}`, resultsBlocks(study, post.body_en, post.body_ar, totals, answered, settings.small_group));
+  const r = await postMessage(channel, resultsText(study), resultsBlocks(study, post.body_en, post.body_ar, totals, answered, settings.small_group));
   const now = new Date().toISOString();
   const u1 = await db.from("results_posts").update({ posted_at: now, slack_ts: r.ts }).eq("study_id", id);
   if (u1.error) throw u1.error;
@@ -312,7 +311,7 @@ export async function refreshStudyPost(id: string): Promise<Outcome> {
   // Booked slots carry a calendar event: a changed place, intro or Meet switch reaches the guests.
   if (sessions) await syncStudyEvents(study, settings, slots);
   const answered = closed ? (sessions ? slots.reduce((n, s) => n + s.booked, 0) : await countResponses(id)) : 0;
-  const text = closed ? `${study.title_en} · closed` : `${study.title_en}${study.title_ar ? ` · ${study.title_ar}` : ""}`;
+  const text = studyText(study, closed);
   try {
     await updateMessage(study.slack_channel_id, study.slack_ts, text, studyBlocks(study, settings, closed, answered, slots));
   } catch (e) {
@@ -431,7 +430,7 @@ export async function refreshSessionPost(study: Study, settings: Settings, close
   if (!study.slack_channel_id || !study.slack_ts) return;
   const slots = await getSlots(study.id);
   const booked = slots.reduce((n, s) => n + s.booked, 0);
-  await updateMessage(study.slack_channel_id, study.slack_ts, `${study.title_en}${closed ? " · closed" : ""}`, studyBlocks(study, settings, closed, booked, slots));
+  await updateMessage(study.slack_channel_id, study.slack_ts, studyText(study, closed), studyBlocks(study, settings, closed, booked, slots));
 }
 
 export type BookResult =

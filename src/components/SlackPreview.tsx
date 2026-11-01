@@ -3,7 +3,10 @@ import type { Question, SlotDraft, StudyDraftLike } from "@/lib/preview";
 import { fmtDate, fmtSlot } from "@/lib/format";
 import { compareColumns, LETTERS } from "@/lib/compare";
 
-/** A faithful-enough rendering of the Block Kit message the bot will post. */
+/** A bilingual label, Arabic first, as the bot writes it. */
+const bi = (en: string, ar: string) => (ar.trim() ? `${ar} · ${en}` : en);
+
+/** A faithful-enough rendering of the Block Kit message the bot will post: Arabic first, then English. */
 export function SlackPreview({
   study,
   questions,
@@ -34,15 +37,19 @@ export function SlackPreview({
             <span className="font-semibold text-ink">Research Desk</span>{" "}
             <span className="text-[11px] text-muted">APP · now</span>
           </div>
-          <div className="text-[13.5px] font-semibold text-ink mt-1">{study.title_en || "Untitled study"}</div>
-          {study.title_ar && <div className="ar text-[13.5px] font-semibold text-ink">{study.title_ar}</div>}
-          {study.intro_en && <div className="text-[13px] text-ink-2 mt-1 whitespace-pre-wrap">{study.intro_en}</div>}
-          {study.intro_ar && <div className="ar text-[13px] text-ink-2 whitespace-pre-wrap">{study.intro_ar}</div>}
+          {study.title_ar ? (
+            <div className="ar text-[13.5px] font-semibold text-ink mt-1">{study.title_ar}</div>
+          ) : (
+            <div className="text-[13.5px] font-semibold text-ink mt-1">{study.title_en || "Untitled study"}</div>
+          )}
+          {study.intro_ar && <div className="ar text-[13px] text-ink-2 mt-1 whitespace-pre-wrap">{study.intro_ar}</div>}
+          {study.title_ar && study.title_en && <div className="text-[13px] font-semibold text-ink mt-1">{study.title_en}</div>}
+          {study.intro_en && <div className="text-[13px] text-ink-2 whitespace-pre-wrap">{study.intro_en}</div>}
 
           {study.type === "poll" && q && (
             <div className="mt-2.5">
-              <div className="text-[13px] text-ink">{q.text_en}</div>
-              {q.text_ar && <div className="ar text-[13px] text-ink">{q.text_ar}</div>}
+              {q.text_ar && <div className="ar text-[13px] text-ink font-semibold">{q.text_ar}</div>}
+              <div className={clsx("text-[13px] text-ink", !q.text_ar && "font-semibold")}>{q.text_en}</div>
               <div className="flex flex-wrap gap-1.5 mt-2">
                 {q.options.filter((o) => o.label_en.trim()).map((o) => (
                   <span
@@ -52,8 +59,7 @@ export function SlackPreview({
                       closed ? "border-line text-muted bg-fill" : "border-line text-ink bg-white",
                     )}
                   >
-                    {o.label_en}
-                    {o.label_ar ? ` · ${o.label_ar}` : ""}
+                    {bi(o.label_en, o.label_ar)}
                   </span>
                 ))}
               </div>
@@ -62,8 +68,8 @@ export function SlackPreview({
 
           {study.type === "preference_test" && q && (
             <div className="mt-2.5">
-              <div className="text-[13px] text-ink font-semibold">{q.text_en || "Which one do you prefer?"}</div>
-              {q.text_ar && <div className="ar text-[13px] text-ink">{q.text_ar}</div>}
+              {q.text_ar && <div className="ar text-[13px] text-ink font-semibold">{q.text_ar}</div>}
+              <div className={clsx("text-[13px] text-ink", !q.text_ar && "font-semibold")}>{q.text_en || "Which one do you prefer?"}</div>
               {images.length > 0 ? (
                 // One picture: the options side by side, each under a band with its letter and label.
                 <div className="mt-2 rounded-sm border border-line-2 bg-white p-2 grid gap-2" style={{ gridTemplateColumns: `repeat(${compareColumns(images.length)}, minmax(0, 1fr))` }}>
@@ -71,7 +77,7 @@ export function SlackPreview({
                     <div key={o.id} className="min-w-0">
                       <div className="flex items-center gap-1.5 mb-1 min-w-0">
                         <span className="h-4.5 w-4.5 rounded-full bg-brand text-brand-ink text-[10px] font-bold grid place-items-center shrink-0">{LETTERS[i]}</span>
-                        <span className="text-[11.5px] font-semibold text-ink truncate">{o.label_en || `Option ${i + 1}`}{o.label_ar ? ` · ${o.label_ar}` : ""}</span>
+                        <span className="text-[11.5px] font-semibold text-ink truncate">{bi(o.label_en || `Option ${i + 1}`, o.label_ar)}</span>
                       </div>
                       <div className="h-36 rounded-sm border border-line-2 bg-fill grid place-items-center overflow-hidden">
                         <img src={o.image_url ?? ""} alt={o.label_en} className="max-h-full max-w-full object-contain" />
@@ -86,7 +92,7 @@ export function SlackPreview({
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   {images.map((o, i) => (
                     <span key={o.id} className={clsx("h-7 px-2.5 inline-flex items-center rounded-sm border text-[12.5px] font-medium", closed ? "border-line text-muted bg-fill" : "border-line text-ink bg-white")}>
-                      {LETTERS[i]} · {o.label_en || `Option ${i + 1}`}
+                      {LETTERS[i]} · {bi(o.label_en || `Option ${i + 1}`, o.label_ar)}
                     </span>
                   ))}
                 </div>
@@ -108,7 +114,7 @@ export function SlackPreview({
               {!closed && orderedSlots.length > 0 && (
                 <div className="mt-2 flex items-center justify-between gap-3">
                   <div className="text-[13px] text-ink">
-                    <span className="font-semibold">Pick a time · اختر وقتاً</span>
+                    <span className="font-semibold">اختر وقتاً · Pick a time</span>
                     <div className="text-[12px] text-ink-2">One slot each. You get a DM with the details and a cancel button.</div>
                   </div>
                   <span className="h-7 px-2.5 inline-flex items-center gap-2 rounded-sm border border-line text-[12.5px] text-ink-2 bg-white shrink-0">
@@ -122,7 +128,7 @@ export function SlackPreview({
           {study.type === "survey" && (
             <div className="mt-2.5 flex items-center gap-2">
               <span className="h-7 px-3 inline-flex items-center rounded-sm bg-brand text-brand-ink text-[12.5px] font-semibold">
-                Answer · أجب
+                أجب · Answer
               </span>
               <span className="text-[12px] text-muted">
                 {questions.length} question{questions.length === 1 ? "" : "s"} · under 10 minutes
@@ -130,9 +136,16 @@ export function SlackPreview({
             </div>
           )}
           <div className="text-[11.5px] text-muted mt-2.5">
-            {closed
-              ? `Closed. Thanks to everyone who ${sessions ? "booked" : "answered"}.`
-              : `Closes ${fmtDate(study.close_at)} · ${sessions ? "bookings" : "answers"} are linked to your profile${!sessions && study.allow_changes === false ? " · answers are final" : ""} · results back in this channel`}
+            <div className="ar">
+              {closed
+                ? "أُغلقت الدراسة. شكراً لكل من شارك."
+                : `تُغلق ${fmtDate(study.close_at)} · مشاركتك مرتبطة بملفك${!sessions && study.allow_changes === false ? " · الإجابات نهائية" : ""} · النتائج تعود هنا`}
+            </div>
+            <div>
+              {closed
+                ? `Closed. Thanks to everyone who ${sessions ? "booked" : "answered"}.`
+                : `Closes ${fmtDate(study.close_at)} · ${sessions ? "bookings" : "answers"} are linked to your profile${!sessions && study.allow_changes === false ? " · answers are final" : ""} · results back in this channel`}
+            </div>
           </div>
         </div>
       </div>

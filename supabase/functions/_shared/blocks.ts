@@ -1,4 +1,4 @@
-// Block Kit builders. Every message is bilingual: English line, Arabic line.
+// Block Kit builders. Every message is bilingual. Study posts, the survey form and results posts put Arabic first, then English.
 import type { Block } from "./slack.ts";
 import { fmtDate, fmtSlot, smallGroup, type Announcement, type Option, type Question, type SessionSlot, type Settings, type SlotWithBookings, type Study } from "./db.ts";
 
@@ -10,8 +10,17 @@ const pt = (text: string, emoji = true) => ({ type: "plain_text", text: text.sli
 const md = (text: string) => ({ type: "section", text: { type: "mrkdwn", text } });
 const ctx = (text: string) => ({ type: "context", elements: [{ type: "mrkdwn", text }] });
 
+/** A bilingual label, Arabic first: "نعم · Yes". */
 function optionLabel(en: string, ar: string): string {
-  return ar ? `${en} · ${ar}` : en;
+  return ar ? `${ar} · ${en}` : en;
+}
+
+/** A question in a post: the Arabic in bold, the English under it. */
+const questionText = (q: Question) => (q.text_ar ? `*${q.text_ar}*\n${q.text_en}` : `*${q.text_en}*`);
+
+/** The notification line of a study post, Arabic title first. */
+export function studyText(study: Study, closed = false): string {
+  return `${[study.title_ar, study.title_en].filter(Boolean).join(" · ") || "Study"}${closed ? " · closed" : ""}`;
 }
 
 const select = (block_id: string, label: string, options: { value: string; text: string }[], initial?: string) => ({
@@ -28,13 +37,15 @@ const select = (block_id: string, label: string, options: { value: string; text:
 
 /** The channel post for any study type. `closed` swaps the controls for a closing line. `slots` only matter for session recruitment. */
 export function studyBlocks(study: Study, settings: Settings, closed = false, answered = 0, slots: SlotWithBookings[] = []): Block[] {
-  const blocks: Block[] = [{ type: "header", text: pt(study.title_en || "Study", true) }];
-  const intro = [study.title_ar, study.intro_en, study.intro_ar].filter(Boolean).join("\n");
-  if (intro) blocks.push(md(intro));
+  // Arabic first: the Arabic title as the header, the Arabic intro, then the English title and intro.
+  const blocks: Block[] = [{ type: "header", text: pt(study.title_ar || study.title_en || "Study", true) }];
+  if (study.intro_ar) blocks.push(md(study.intro_ar));
+  const en = [study.title_ar && study.title_en ? `*${study.title_en}*` : "", study.intro_en].filter(Boolean).join("\n");
+  if (en) blocks.push(md(en));
 
   const q = study.questions[0];
   if (study.type === "poll" && q) {
-    blocks.push(md(`*${q.text_en}*${q.text_ar ? `\n${q.text_ar}` : ""}`));
+    blocks.push(md(questionText(q)));
     if (!closed)
       blocks.push({
         type: "actions",
@@ -47,7 +58,7 @@ export function studyBlocks(study: Study, settings: Settings, closed = false, an
         })),
       });
   } else if (study.type === "preference_test" && q) {
-    blocks.push(md(`*${q.text_en}*${q.text_ar ? `\n${q.text_ar}` : ""}`));
+    blocks.push(md(questionText(q)));
     const opts = q.options.filter((o) => o.image_url).slice(0, 6);
     // One picture with the options side by side, built by the dashboard on save. Without it, one image block each
     // (Slack stacks them) and the buttons carry the labels alone.
@@ -78,7 +89,7 @@ export function studyBlocks(study: Study, settings: Settings, closed = false, an
       blocks.push({
         type: "section",
         block_id: `session:${study.id}`,
-        text: { type: "mrkdwn", text: "*Pick a time · اختر وقتاً*\nOne slot each. You get a DM with the details and a cancel button." },
+        text: { type: "mrkdwn", text: "*اختر وقتاً · Pick a time*\nOne slot each. You get a DM with the details and a cancel button." },
         accessory: {
           type: "static_select",
           action_id: `session:pick:${study.id}`,
@@ -86,13 +97,13 @@ export function studyBlocks(study: Study, settings: Settings, closed = false, an
           options: open.slice(0, 100).map((s) => ({ text: pt(fmtSlot(s.starts_at, s.minutes)), value: s.id })),
         },
       });
-    else if (!closed) blocks.push(md("All sessions are booked. Thank you · اكتملت الحجوزات، شكراً لكم"));
+    else if (!closed) blocks.push(md("اكتملت الحجوزات، شكراً لكم · All sessions are booked. Thank you"));
   } else if (!closed) {
     blocks.push({
       type: "actions",
       block_id: `survey:${study.id}`,
       elements: [
-        { type: "button", style: "primary", text: pt("Answer · أجب"), action_id: `survey:${study.id}`, value: study.id },
+        { type: "button", style: "primary", text: pt("أجب · Answer"), action_id: `survey:${study.id}`, value: study.id },
       ],
     });
     blocks.push(ctx(`${study.questions.length} question${study.questions.length === 1 ? "" : "s"} · under 10 minutes`));
@@ -102,8 +113,8 @@ export function studyBlocks(study: Study, settings: Settings, closed = false, an
   const finalAnswers = !sessions && study.allow_changes === false;
   blocks.push(
     closed
-      ? ctx(`Closed · ${smallGroup(answered, settings.small_group)} ${sessions ? "booked" : "answered"} · results come back here. Thank you.\nأُغلقت الدراسة. شكراً لكل من شارك.`)
-      : ctx(`Closes ${fmtDate(study.close_at)} · ${sessions ? "bookings" : "answers"} are linked to your profile${finalAnswers ? " · answers are final" : ""} · results come back in this channel\nتُغلق ${fmtDate(study.close_at)} · مشاركتك مرتبطة بملفك${finalAnswers ? " · الإجابات نهائية" : ""} · النتائج تعود هنا`),
+      ? ctx(`أُغلقت الدراسة. شكراً لكل من شارك.\nClosed · ${smallGroup(answered, settings.small_group)} ${sessions ? "booked" : "answered"} · results come back here. Thank you.`)
+      : ctx(`تُغلق ${fmtDate(study.close_at)} · مشاركتك مرتبطة بملفك${finalAnswers ? " · الإجابات نهائية" : ""} · النتائج تعود هنا\nCloses ${fmtDate(study.close_at)} · ${sessions ? "bookings" : "answers"} are linked to your profile${finalAnswers ? " · answers are final" : ""} · results come back in this channel`),
   );
   return blocks;
 }
@@ -341,17 +352,20 @@ export function sessionBookedBlocks(study: Study, slot: SlotWithBookings, bookin
 }
 
 function questionInput(q: Question): Block {
-  const label = pt(q.text_en.slice(0, 150) || "Question");
-  const hint = q.text_ar ? { hint: pt(q.text_ar) } : {};
+  // Arabic first: the Arabic question is the label and the English sits under it as the hint.
+  // Labels and hints take up to 2000 characters, so long questions are not cut at the 75 of a button.
+  const long = (text: string) => ({ type: "plain_text", text: text.slice(0, 2000), emoji: true });
+  const label = long(q.text_ar || q.text_en || "Question");
+  const hint = q.text_ar && q.text_en ? { hint: long(q.text_en) } : {};
   const base = { type: "input", block_id: q.id, optional: !q.required, label, ...hint };
   if (q.kind === "single")
     return { ...base, element: { type: "radio_buttons", action_id: "v", options: q.options.slice(0, 10).map((o) => ({ text: pt(optionLabel(o.label_en, o.label_ar)), value: o.id })) } };
   if (q.kind === "multi")
     return { ...base, element: { type: "checkboxes", action_id: "v", options: q.options.slice(0, 10).map((o) => ({ text: pt(optionLabel(o.label_en, o.label_ar)), value: o.id })) } };
   if (q.kind === "scale")
-    return { ...base, element: { type: "radio_buttons", action_id: "v", options: ["1", "2", "3", "4", "5"].map((v) => ({ text: pt(v === "1" ? "1 · hard · صعب" : v === "5" ? "5 · easy · سهل" : v), value: v })) } };
+    return { ...base, element: { type: "radio_buttons", action_id: "v", options: ["1", "2", "3", "4", "5"].map((v) => ({ text: pt(v === "1" ? "1 · صعب · hard" : v === "5" ? "5 · سهل · easy" : v), value: v })) } };
   if (q.kind === "yesno")
-    return { ...base, element: { type: "radio_buttons", action_id: "v", options: [{ text: pt("Yes · نعم"), value: "1" }, { text: pt("No · لا"), value: "0" }] } };
+    return { ...base, element: { type: "radio_buttons", action_id: "v", options: [{ text: pt("نعم · Yes"), value: "1" }, { text: pt("لا · No"), value: "0" }] } };
   return { ...base, element: { type: "plain_text_input", action_id: "v", multiline: true, max_length: 500 } };
 }
 
@@ -360,11 +374,11 @@ export function surveyModal(study: Study, channel: string): Block {
     type: "modal",
     callback_id: `survey:${study.id}`,
     private_metadata: JSON.stringify({ channel }),
-    title: pt((study.title_en || "Survey").slice(0, 24)),
-    submit: pt("Send · إرسال"),
+    title: pt((study.title_ar || study.title_en || "Survey").slice(0, 24)),
+    submit: pt("إرسال · Send"),
     close: pt("Cancel"),
     blocks: [
-      ...(study.intro_en || study.intro_ar ? [md(bi(study.intro_en, study.intro_ar))] : []),
+      ...(study.intro_en || study.intro_ar ? [md(study.intro_ar ? bi(study.intro_ar, study.intro_en) : study.intro_en)] : []),
       ...study.questions.map(questionInput),
       ctx("Your answers are linked to your profile. Only the research team sees names; the channel sees totals."),
     ],
@@ -376,7 +390,7 @@ export function totalsText(study: Study, responses: { answers: { question_id: st
   const lines: string[] = [];
   for (const q of study.questions) {
     if (q.kind === "text") continue;
-    lines.push(`*${q.text_en}*`);
+    lines.push(questionText(q));
     const counts = new Map<string, number>();
     const bump = (k: string) => counts.set(k, (counts.get(k) ?? 0) + 1);
     const vals: number[] = [];
@@ -394,10 +408,10 @@ export function totalsText(study: Study, responses: { answers: { question_id: st
       }
     const rows: { label: string; n: number }[] =
       q.kind === "single" || q.kind === "multi"
-        ? q.options.map((o) => ({ label: o.label_en, n: counts.get(o.id) ?? 0 }))
+        ? q.options.map((o) => ({ label: optionLabel(o.label_en, o.label_ar), n: counts.get(o.id) ?? 0 }))
         : q.kind === "scale"
           ? ["1", "2", "3", "4", "5"].map((k) => ({ label: k, n: counts.get(k) ?? 0 }))
-          : [{ label: "Yes", n: counts.get("yes") ?? 0 }, { label: "No", n: counts.get("no") ?? 0 }];
+          : [{ label: "نعم · Yes", n: counts.get("yes") ?? 0 }, { label: "لا · No", n: counts.get("no") ?? 0 }];
     const total = q.kind === "multi" ? responses.length : rows.reduce((s, r) => s + r.n, 0);
     for (const r of rows) {
       const bar = "▇".repeat(Math.round((10 * r.n) / Math.max(1, total)));
@@ -410,11 +424,18 @@ export function totalsText(study: Study, responses: { answers: { question_id: st
   return lines.join("\n").trim();
 }
 
+/** The notification line and header of a results post, Arabic title first. */
+export function resultsText(study: Study): string {
+  return study.title_ar ? `النتائج: ${study.title_ar} · Results: ${study.title_en}` : `Results: ${study.title_en}`;
+}
+
+/** The results post: Arabic title and text first, then the English, then the totals. */
 export function resultsBlocks(study: Study, body_en: string, body_ar: string, totals: string | null, answered: number, threshold: number): Block[] {
-  const blocks: Block[] = [{ type: "header", text: pt(`Results: ${study.title_en}`.slice(0, 150)) }, md(body_en)];
+  const blocks: Block[] = [{ type: "header", text: pt(study.title_ar ? `النتائج: ${study.title_ar}` : `Results: ${study.title_en}`) }];
   if (body_ar) blocks.push(md(body_ar));
+  blocks.push(md(study.title_ar ? `*Results: ${study.title_en}*\n${body_en}` : body_en));
   if (totals) blocks.push({ type: "divider" }, md(totals.slice(0, 2900)));
-  blocks.push(ctx(`${smallGroup(answered, threshold)} answered · thank you · شكراً لكم`));
+  blocks.push(ctx(`شكراً لكم · ${smallGroup(answered, threshold)} answered · thank you`));
   return blocks;
 }
 

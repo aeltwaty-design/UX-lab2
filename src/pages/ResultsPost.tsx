@@ -17,14 +17,23 @@ export function totalsLines(study: StudyWithQuestions, responses: Response[], th
   const lines: string[] = [];
   for (const q of study.questions) {
     if (q.kind === "text") continue;
-    lines.push(`*${q.text_en}*`);
+    // Arabic first, like the post: the Arabic question in bold, then the English; option labels "عربي · English".
+    lines.push(q.text_ar ? `*${q.text_ar}*\n${q.text_en}` : `*${q.text_en}*`);
+    const postLabel = (key: string, label: string) => {
+      if (q.kind === "single" || q.kind === "multi") {
+        const o = q.options.find((x) => x.id === key);
+        return o?.label_ar ? `${o.label_ar} · ${o.label_en}` : label;
+      }
+      if (q.kind === "yesno") return key === "yes" ? "نعم · Yes" : "لا · No";
+      return key; // scale: the bot writes the number alone
+    };
     const counts = tally(q, responses);
     const total = q.kind === "multi" ? responses.length : counts.reduce((n, c) => n + c.count, 0);
     for (const c of counts) {
       const shown = smallGroup(c.count, threshold);
       const p = c.count < threshold ? "" : ` (${pct(c.count, total)}%)`;
       const bar = "▇".repeat(Math.round((10 * c.count) / Math.max(1, total)));
-      lines.push(`${bar || "·"} ${c.label}: ${shown}${p}`);
+      lines.push(`${bar || "·"} ${postLabel(c.key, c.label)}: ${shown}${p}`);
     }
     if (q.kind === "scale") {
       const m = scaleMean(q, responses);
@@ -148,13 +157,18 @@ export default function ResultsPost() {
             <span className="h-8 w-8 rounded-sm bg-brand text-brand-ink grid place-items-center text-[11px] font-bold shrink-0">RD</span>
             <div className="min-w-0 flex-1 text-[13px]">
               <div><span className="font-semibold text-ink">Research Desk</span> <span className="text-[11px] text-muted">APP</span></div>
-              <div className="font-semibold text-ink mt-1">Results: {study.title_en}</div>
-              <div className="text-ink-2 whitespace-pre-wrap mt-1">{post.body_en || "…"}</div>
+              {study.title_ar ? (
+                <div className="ar font-semibold text-ink mt-1">النتائج: {study.title_ar}</div>
+              ) : (
+                <div className="font-semibold text-ink mt-1">Results: {study.title_en}</div>
+              )}
               {post.body_ar && <div className="ar text-ink-2 whitespace-pre-wrap mt-1">{post.body_ar}</div>}
+              {study.title_ar && <div className="font-semibold text-ink mt-2">Results: {study.title_en}</div>}
+              <div className="text-ink-2 whitespace-pre-wrap mt-1">{post.body_en || "…"}</div>
               {post.include_totals && (
                 <pre className="font-sans text-[12.5px] text-ink-2 whitespace-pre-wrap mt-2 border-l-2 border-line pl-2">{totals.join("\n")}</pre>
               )}
-              <div className="text-[11.5px] text-muted mt-2">{responses.length} answered · thank you</div>
+              <div className="text-[11.5px] text-muted mt-2">شكراً لكم · {responses.length} answered · thank you</div>
             </div>
           </div>
         </div>

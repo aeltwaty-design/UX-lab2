@@ -80,7 +80,7 @@ Open `supabase/cron.sql`, replace `PROJECT_REF`, run it in the SQL editor (alrea
 
 ### 6. First post
 
-Dashboard → Participants → **Update profile post**. It posts and pins the welcome and profile post in the channel (Arabic first, then English); after a wording change the same button rewrites it in place. Then create the first poll, schedule it, and watch the answers arrive.
+Dashboard → Participants → **Update profile post**. It posts and pins the welcome and profile post in the channel (Arabic first, then English); after a wording change the same button rewrites it in place. Then create the first poll, schedule it, and watch the answers arrive. Study posts, the survey form and results posts also put Arabic first: the Arabic title as the header, the Arabic intro and question, then the English; buttons and options read "عربي · English". A study without Arabic text posts in English alone.
 
 ### 7. Google Calendar and Meet (optional, for session recruitment)
 
