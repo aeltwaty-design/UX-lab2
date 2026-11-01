@@ -676,7 +676,7 @@ export default function StudyBuilder() {
                       </button>
                     );
                   })}
-                  <span className="text-[12px] text-muted self-center">Reminders go only to these teams. The post is still visible to the whole channel.</span>
+                  <span className="text-[12px] text-muted self-center">Only these teams can answer or book, and reminders go only to them. The whole channel still sees the post; anyone else who taps gets a short note.</span>
                 </div>
               )}
               <div>

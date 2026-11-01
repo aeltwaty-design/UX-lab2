@@ -5,7 +5,7 @@ import { dm, displayName, openView, SlackError, updateMessage, userInfo, verifyS
 import { db, fmtSlot, getParticipant, getSettings, getStudy, setSetting, type Participant, type Settings } from "../_shared/db.ts";
 import { frictionModal, profileModal, sessionBookedBlocks, surveyModal, type Pending } from "../_shared/blocks.ts";
 import { bookSlot, cancelBooking, processScreenshot, readFriction, recordFriction, recordPollTap, recordSurvey, sessionCalendar, thank, type SurveyValues } from "../_shared/actions.ts";
-import { hasAnswered } from "../_shared/db.ts";
+import { hasAnswered, inAudience, NOT_IN_AUDIENCE } from "../_shared/db.ts";
 
 const ok = (body: unknown = "") =>
   new Response(typeof body === "string" ? body : JSON.stringify(body), {
@@ -73,6 +73,7 @@ async function finishBooking(p: Participant, studyId: string, slotId: string, ch
   if (!r.ok) {
     const why: Record<string, string> = {
       closed: "This round is closed.",
+      audience: NOT_IN_AUDIENCE,
       unknown: "That slot no longer exists.",
       past: "That slot has already passed.",
       full: "That slot just filled up. Pick another one.",
@@ -116,8 +117,16 @@ async function applyPending(p: Participant, pending: Pending | null, user: strin
       const r = await recordPollTap(p, pending.study_id, pending.option_id);
       await thank(pending.channel, user, r.final ? `Profile saved and your answer recorded: *${r.label}*. Thank you.` : `Profile saved and your answer recorded: *${r.label}*. You can change it until ${r.closes}.`);
     } catch (e) {
-      const final = (e as Error).message === "final";
-      await thank(pending.channel, user, final ? "Profile saved. Your earlier answer stands; this study does not allow changes." : "Profile saved. That poll is closed now, so the answer was not recorded.");
+      const why = (e as Error).message;
+      await thank(
+        pending.channel,
+        user,
+        why === "audience"
+          ? NOT_IN_AUDIENCE
+          : why === "final"
+            ? "Profile saved. Your earlier answer stands; this study does not allow changes."
+            : "Profile saved. That poll is closed now, so the answer was not recorded.",
+      );
     }
   }
 }
@@ -212,8 +221,8 @@ Deno.serve(async (req) => {
           const r = await recordPollTap(participant, a, b);
           await thank(channel, user, r.final ? `Recorded: *${r.label}*. Thank you. This study takes one answer per member.` : `Recorded: *${r.label}*. You can change it until ${r.closes}. Thank you.`);
         } catch (e) {
-          const final = (e as Error).message === "final";
-          await thank(channel, user, final ? "Your answer is already in. This study does not allow changes." : "This study is closed.");
+          const why = (e as Error).message;
+          await thank(channel, user, why === "audience" ? NOT_IN_AUDIENCE : why === "final" ? "Your answer is already in. This study does not allow changes." : "This study is closed.");
         }
         return ok();
       }
@@ -226,6 +235,10 @@ Deno.serve(async (req) => {
         const study = await getStudy(a);
         if (study.status !== "live") {
           await thank(channel, user, "This study is closed.");
+          return ok();
+        }
+        if (!inAudience(study, participant)) {
+          await thank(channel, user, NOT_IN_AUDIENCE);
           return ok();
         }
         if (study.allow_changes === false && (await hasAnswered(study.id, participant.id))) {
@@ -258,6 +271,10 @@ Deno.serve(async (req) => {
         if (pending?.kind === "survey") {
           await db.from("pending_actions").delete().eq("slack_user_id", user);
           const study = await getStudy(pending.study_id);
+          if (study.status === "live" && !inAudience(study, p)) {
+            await thank(meta.channel, user, NOT_IN_AUDIENCE);
+            return ok({ response_action: "clear" });
+          }
           if (study.status === "live") return ok({ response_action: "update", view: surveyModal(study, meta.channel ?? "") });
         }
         if (pending?.kind === "friction") {
@@ -298,8 +315,16 @@ Deno.serve(async (req) => {
           if (errors) return ok({ response_action: "errors", errors });
           await thank(meta.channel, user, "Answers saved. Thank you. Results come back to the channel after it closes.");
         } catch (e) {
-          const final = (e as Error).message === "final";
-          await thank(meta.channel, user, final ? "Your answers were already in, so this submission was not saved. This study does not allow changes." : "This study is closed, so the answers were not saved.");
+          const why = (e as Error).message;
+          await thank(
+            meta.channel,
+            user,
+            why === "audience"
+              ? NOT_IN_AUDIENCE
+              : why === "final"
+                ? "Your answers were already in, so this submission was not saved. This study does not allow changes."
+                : "This study is closed, so the answers were not saved.",
+          );
         }
         return ok({ response_action: "clear" });
       }

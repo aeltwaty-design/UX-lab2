@@ -1,6 +1,6 @@
 // The operations behind every Slack-facing button, shared by the four functions.
 import { channelMemberIds, deleteMessage, displayName, dm, downloadFile, listUsers, permalink, pin, postEphemeral, postMessage, slack, SlackError, sleep, updateMessage, userInfo } from "./slack.ts";
-import { countResponses, db, fmtSlot, getAnnouncement, getSettings, getSlots, getStudy, hasAnswered, riyadh, setSetting, snapshot, weekKey, type Participant, type Settings, type SlotWithBookings, type Study } from "./db.ts";
+import { countResponses, db, fmtSlot, getAnnouncement, getSettings, getSlots, getStudy, hasAnswered, inAudience, riyadh, setSetting, snapshot, weekKey, type Participant, type Settings, type SlotWithBookings, type Study } from "./db.ts";
 import { announcementBlocks, announcementText, frictionDigestBlocks, frictionPromptBlocks, profilePromptBlocks, profilePromptText, profileReminderBlocks, profileReminderText, resultsBlocks, resultsText, studyBlocks, studyText, totalsText, type SlotCalendar } from "./blocks.ts";
 import { deleteStudyEvents, syncSlotEvent, syncStudyEvents } from "./google.ts";
 
@@ -72,11 +72,7 @@ async function nonResponders(study: Study): Promise<Participant[]> {
       : await db.from("responses").select("participant_id").eq("study_id", study.id);
   if (done.error) throw done.error;
   const answered = new Set((done.data ?? []).map((r: { participant_id: string }) => r.participant_id));
-  return ((people ?? []) as Participant[]).filter((p) => {
-    if (answered.has(p.id)) return false;
-    if (study.audience === "teams") return Boolean(p.team && study.audience_teams.includes(p.team));
-    return true;
-  });
+  return ((people ?? []) as Participant[]).filter((p) => !answered.has(p.id) && inAudience(study, p));
 }
 
 /** DMs everyone in the audience who has not answered, except members excluded from reminders. */
@@ -341,10 +337,14 @@ export async function testSlack(): Promise<Outcome> {
 
 // ---------- answers ----------
 
-/** Records a poll or preference-test tap. Throws "closed" after close, and "final" when the study takes one answer and the member already gave it. */
+/**
+ * Records a poll or preference-test tap. Throws "closed" after close, "audience" when the member's team is not one of
+ * the study's teams, and "final" when the study takes one answer and the member already gave it.
+ */
 export async function recordPollTap(p: Participant, studyId: string, optionId: string): Promise<{ label: string; closes: string; final: boolean }> {
   const study = await getStudy(studyId);
   if (study.status !== "live") throw new Error("closed");
+  if (!inAudience(study, p)) throw new Error("audience");
   if (study.allow_changes === false && (await hasAnswered(studyId, p.id))) throw new Error("final");
   const q = study.questions[0];
   const opt = q?.options.find((o) => o.id === optionId);
@@ -366,10 +366,11 @@ export interface SlackFile { id: string; name?: string; mimetype?: string; url_p
 
 export type SurveyValues = Record<string, { type: string; value?: string; selected_option?: { value: string }; selected_options?: { value: string }[]; files?: SlackFile[] }>;
 
-/** Saves a survey submission. Throws "closed" after close, and "final" when the study takes one answer and the member already answered. */
+/** Saves a survey submission. Throws "closed" after close, "audience" outside the study's teams, and "final" when the study takes one answer and the member already answered. */
 export async function recordSurvey(p: Participant, studyId: string, values: Record<string, SurveyValues>): Promise<Record<string, string> | null> {
   const study = await getStudy(studyId);
   if (study.status !== "live") throw new Error("closed");
+  if (!inAudience(study, p)) throw new Error("audience");
   if (study.allow_changes === false && (await hasAnswered(studyId, p.id))) throw new Error("final");
   const errors: Record<string, string> = {};
   const rows: { question_id: string; option_id?: string; value_text?: string; value_num?: number }[] = [];
@@ -435,12 +436,13 @@ export async function refreshSessionPost(study: Study, settings: Settings, close
 
 export type BookResult =
   | { ok: true; slot: SlotWithBookings; bookingId: string; moved: boolean; same: boolean; fromSlotId: string | null }
-  | { ok: false; reason: "closed" | "unknown" | "past" | "full" | "cap"; hours?: number };
+  | { ok: false; reason: "closed" | "audience" | "unknown" | "past" | "full" | "cap"; hours?: number };
 
-/** Books a slot for a member: one active booking per study, moving it when they pick again, within the weekly hours cap. */
+/** Books a slot for a member of the study's teams: one active booking per study, moving it when they pick again, within the weekly hours cap. */
 export async function bookSlot(p: Participant, studyId: string, slotId: string, settings: Settings): Promise<BookResult> {
   const study = await getStudy(studyId);
   if (study.status !== "live") return { ok: false, reason: "closed" };
+  if (!inAudience(study, p)) return { ok: false, reason: "audience" };
   const slots = await getSlots(studyId);
   const slot = slots.find((s) => s.id === slotId);
   if (!slot) return { ok: false, reason: "unknown" };

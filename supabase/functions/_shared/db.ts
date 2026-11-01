@@ -180,6 +180,15 @@ export async function getParticipant(slackUserId: string): Promise<Participant |
   return (data as Participant | null) ?? null;
 }
 
+/** True when the member may take part: the study is open to everyone, or the member's team is one of the chosen teams. */
+export function inAudience(study: Pick<Study, "audience" | "audience_teams">, p: Pick<Participant, "team">): boolean {
+  return study.audience !== "teams" || Boolean(p.team && (study.audience_teams ?? []).includes(p.team));
+}
+
+/** The note a member outside the study's teams gets when they tap, book or open the form. Arabic first. */
+export const NOT_IN_AUDIENCE =
+  "هذه الدراسة مخصّصة لفرق محددة، وفريقك ليس منها هذه المرة. شكراً لاهتمامك 💚\nThis study is for selected teams, and yours isn't one of them this time. Thank you for your interest.";
+
 export function snapshot(p: Participant) {
   return { name: p.name, age_band: p.age_band, gender: p.gender, device: p.device, team: p.team, apps: p.apps, language: p.language };
 }
