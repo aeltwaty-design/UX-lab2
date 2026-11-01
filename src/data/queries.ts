@@ -419,6 +419,7 @@ export type AdminAction =
   | { action: "friction_digest" }
   | { action: "session_reminders" }
   | { action: "dm_participant"; participant_id: string; text: string }
+  | { action: "remove_booking"; booking_id: string; text: string }
   | { action: "post_announcement"; announcement_id: string }
   | { action: "refresh_announcement"; announcement_id: string }
   | { action: "delete_announcement"; announcement_id: string; remove_posts: boolean }

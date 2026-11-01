@@ -503,6 +503,47 @@ export async function cancelBooking(bookingId: string, slackUserId: string): Pro
   return { ok: true, study, slot };
 }
 
+/**
+ * Removes a member's booking from the dashboard: the seat opens again in the channel post,
+ * the member comes off the calendar event, and the note (when given) goes to them by DM.
+ * The member can book again while the study is live.
+ */
+export async function removeBooking(bookingId: string, note: string): Promise<Outcome> {
+  const { data, error } = await db
+    .from("session_bookings")
+    .select("id, study_id, slot_id, cancelled_at, profile, participant:participants(slack_user_id, deleted_at)")
+    .eq("id", bookingId)
+    .maybeSingle();
+  if (error) throw error;
+  const b = data as {
+    id: string;
+    study_id: string;
+    slot_id: string;
+    cancelled_at: string | null;
+    profile: { name?: string } | null;
+    participant: { slack_user_id: string; deleted_at: string | null } | null;
+  } | null;
+  if (!b) return { ok: false, message: "That booking no longer exists." };
+  const name = b.profile?.name || "the member";
+  if (b.cancelled_at) return { ok: true, message: `${name}'s booking was already cancelled.` };
+  const u = await db.from("session_bookings").update({ cancelled_at: new Date().toISOString() }).eq("id", b.id).is("cancelled_at", null);
+  if (u.error) throw u.error;
+  const [study, settings] = await Promise.all([getStudy(b.study_id), getSettings()]);
+  if (study.status === "live") await refreshSessionPost(study, settings);
+  await syncSlotEvent(study, b.slot_id, settings);
+  const t = note.trim();
+  let told = "";
+  if (t && b.participant && !b.participant.deleted_at) {
+    try {
+      await dm(b.participant.slack_user_id, t.slice(0, 2000));
+      told = " and told them by DM";
+    } catch (e) {
+      told = `, but the DM failed (${(e as Error).message})`;
+    }
+  }
+  return { ok: true, message: `Removed ${name}'s booking${told}. The seat is free again.` };
+}
+
 /** DMs everyone whose session starts within the next day. Once per booking. */
 export async function sessionReminders(): Promise<Outcome> {
   const { data, error } = await db

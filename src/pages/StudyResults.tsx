@@ -9,15 +9,35 @@ import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
 import { ConfirmDialog } from "@/components/ui/Dialog";
 import { Empty, Spinner } from "@/components/ui/Empty";
-import { Select, Toggle } from "@/components/ui/Field";
+import { Select, Textarea, Toggle } from "@/components/ui/Field";
+import { Icon } from "@/components/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { getResultsPost, getStudy, listBookings, listParticipants, listReminderExclusions, listResponses, runAdminAction } from "@/data/queries";
 import { daysBetween, fmtDate, fmtDateTime, fmtSlot, pct, typeLabel } from "@/lib/format";
 import { answerSummary, groupBy, scaleMean, segmentOf, SPLITS, tally, textAnswers, type SplitKey } from "@/lib/results";
-import { STATUS_LABEL, type Participant, type Response, type ResultsPost, type SessionBooking, type StudyWithQuestions } from "@/lib/types";
+import { STATUS_LABEL, type Participant, type Response, type ResultsPost, type SessionBooking, type SessionSlot, type StudyWithQuestions } from "@/lib/types";
 import { audienceLabel } from "./Studies";
 
 const PROFILE_COLS = "grid-cols-[minmax(0,1.2fr)_90px_70px_80px_minmax(0,1fr)_minmax(0,1.4fr)_110px]";
+/** The same columns plus a Remove button, for bookings. */
+const BOOKING_COLS = "grid-cols-[minmax(0,1.2fr)_90px_70px_80px_minmax(0,1fr)_minmax(0,1.4fr)_110px_28px]";
+
+/** The DM a removed member gets by default: Arabic first, then English. The admin can edit it before sending. */
+function removalNote(study: StudyWithQuestions, b: SessionBooking, slot: SessionSlot | undefined): string {
+  const first = (b.profile.name || "").trim().split(/\s+/)[0] ?? "";
+  const when = slot ? ` (${fmtSlot(slot.starts_at, slot.minutes)})` : "";
+  const live = study.status === "live";
+  const ar = [
+    `مرحباً ${first} 👋`,
+    `أُلغي حجزك لجلسة «${study.title_ar || study.title_en}»${when}.`,
+    live ? "إن أردت موعداً آخر، اختر وقتاً من منشور الدراسة في القناة 📅" : "",
+  ];
+  const en = [
+    `Hi ${first}, your booking for "${study.title_en}"${when} was cancelled.`,
+    live ? "If you'd like another time, pick one from the study post in the channel 📅" : "",
+  ];
+  return `${ar.filter(Boolean).join("\n")}\n\n${en.filter(Boolean).join(" ")}`;
+}
 
 export default function StudyResults() {
   const { id = "" } = useParams();
@@ -35,6 +55,10 @@ export default function StudyResults() {
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [removePosts, setRemovePosts] = useState(true);
+  /** The booking being removed, with the DM switch and text for the confirmation. */
+  const [removing, setRemoving] = useState<SessionBooking | null>(null);
+  const [tellThem, setTellThem] = useState(true);
+  const [removalText, setRemovalText] = useState("");
 
   const load = useCallback(() => {
     getStudy(id)
@@ -108,6 +132,30 @@ export default function StudyResults() {
       nav("/studies");
     } catch (e) {
       toast((e as Error).message, "error");
+      setBusy(null);
+    }
+  }
+
+  function askRemove(b: SessionBooking) {
+    if (!study) return;
+    const slot = study.slots.find((s) => s.id === b.slot_id);
+    const past = slot ? new Date(slot.starts_at).getTime() < Date.now() : false;
+    setTellThem(!past && !b.participant?.deleted_at);
+    setRemovalText(removalNote(study, b, slot));
+    setRemoving(b);
+  }
+  async function removeBooking() {
+    if (!removing) return;
+    setBusy("remove_booking");
+    try {
+      const r = await runAdminAction({ action: "remove_booking", booking_id: removing.id, text: tellThem ? removalText : "" });
+      if (!r.ok) throw new Error(r.message);
+      toast(r.message);
+      setRemoving(null);
+      load();
+    } catch (e) {
+      toast((e as Error).message, "error");
+    } finally {
       setBusy(null);
     }
   }
@@ -233,7 +281,18 @@ export default function StudyResults() {
                           </div>
                           <div className="flex flex-wrap gap-1.5 min-w-0">
                             {mine.map((b) => (
-                              <Chip key={b.id} tone={past ? "neutral" : "live"}>{b.profile.name}{b.participant?.deleted_at ? " · forgotten" : ""}</Chip>
+                              <Chip key={b.id} tone={past ? "neutral" : "live"}>
+                                {b.profile.name}{b.participant?.deleted_at ? " · forgotten" : ""}
+                                <button
+                                  type="button"
+                                  className="-mr-1 ml-0.5 grid h-4 w-4 place-items-center rounded-full text-muted hover:bg-ink/10 hover:text-danger"
+                                  title={`Remove ${b.profile.name}'s booking`}
+                                  aria-label={`Remove ${b.profile.name}'s booking`}
+                                  onClick={() => askRemove(b)}
+                                >
+                                  <Icon name="x" size={11} />
+                                </button>
+                              </Chip>
                             ))}
                             {mine.length === 0 && <span className="text-[12.5px] text-muted">Nobody yet.</span>}
                           </div>
@@ -308,14 +367,15 @@ export default function StudyResults() {
                   <div className="text-[13px] text-muted">Nobody yet.</div>
                 ) : (
                   <div className="-mx-4 -mb-4">
-                    <div className={clsx("grid gap-2 px-4 h-8 items-center text-[11px] font-semibold uppercase tracking-[0.04em] text-muted bg-fill border-y border-line-2", PROFILE_COLS)}>
+                    <div className={clsx("grid gap-2 px-4 h-8 items-center text-[11px] font-semibold uppercase tracking-[0.04em] text-muted bg-fill border-y border-line-2", sessions ? BOOKING_COLS : PROFILE_COLS)}>
                       <div>Name</div><div>Age</div><div>Gender</div><div>Device</div><div>Team</div><div>{sessions ? "Slot" : firstQ ? "Answer" : ""}</div><div>When</div>
+                      {sessions && <div />}
                     </div>
                     {sessions
                       ? bookings.map((b) => {
                           const slot = study.slots.find((s) => s.id === b.slot_id);
                           return (
-                            <div key={b.id} className={clsx("grid gap-2 px-4 py-2 items-center text-[12.5px] border-b border-line-2 last:border-b-0", PROFILE_COLS)}>
+                            <div key={b.id} className={clsx("grid gap-2 px-4 py-2 items-center text-[12.5px] border-b border-line-2 last:border-b-0", BOOKING_COLS)}>
                               <div className="text-ink truncate">
                                 {b.profile.name}
                                 {b.participant?.deleted_at && <span className="text-muted"> · forgotten</span>}
@@ -326,6 +386,15 @@ export default function StudyResults() {
                               <div className="text-ink-2 truncate">{b.profile.team ?? "—"}</div>
                               <div className="text-ink truncate tabular-nums">{slot ? fmtSlot(slot.starts_at, slot.minutes) : "—"}</div>
                               <div className="text-muted tabular-nums">{fmtDateTime(b.booked_at)}</div>
+                              <button
+                                type="button"
+                                className="grid h-7 w-7 place-items-center rounded-sm text-muted hover:bg-danger-light hover:text-danger"
+                                title={`Remove ${b.profile.name}'s booking`}
+                                aria-label={`Remove ${b.profile.name}'s booking`}
+                                onClick={() => askRemove(b)}
+                              >
+                                <Icon name="trash" size={14} />
+                              </button>
                             </div>
                           );
                         })
@@ -467,6 +536,38 @@ export default function StudyResults() {
             hint="The study post and the results post, if any. Turn this off to keep them as a record."
           />
         )}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={removing !== null}
+        title={`Remove ${removing?.profile.name ?? "this"}'s booking?`}
+        confirmLabel="Remove booking"
+        danger
+        busy={busy === "remove_booking"}
+        onClose={() => setRemoving(null)}
+        onConfirm={removeBooking}
+      >
+        {removing && (() => {
+          const slot = study.slots.find((s) => s.id === removing.slot_id);
+          const forgotten = Boolean(removing.participant?.deleted_at);
+          return (
+            <>
+              <p>
+                {slot ? `${fmtSlot(slot.starts_at, slot.minutes)}. ` : ""}
+                The seat opens again{isLive ? " in the channel post" : ""} and they come off the calendar invite, if there is one.
+                {isLive ? " They can still book another slot while the study is live." : ""}
+              </p>
+              {forgotten ? (
+                <p className="text-muted">This member was forgotten, so no DM can go out.</p>
+              ) : (
+                <>
+                  <Toggle checked={tellThem} onChange={setTellThem} label="Tell them by DM" hint="Sent as the bot. Edit the text as you like." />
+                  {tellThem && <Textarea dir="auto" value={removalText} onChange={(e) => setRemovalText(e.target.value)} className="min-h-32 text-[12.5px]" />}
+                </>
+              )}
+            </>
+          );
+        })()}
       </ConfirmDialog>
     </>
   );
