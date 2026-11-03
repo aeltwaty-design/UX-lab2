@@ -13,7 +13,8 @@ import { ConfirmDialog } from "@/components/ui/Dialog";
 import { useToast } from "@/components/ui/Toast";
 import { clearComparison, getSettings, getStudy, listBookings, runAdminAction, saveComparison, saveStudy, updatePublishedStudy, uploadStudyImage, type StudyDraft } from "@/data/queries";
 import { runChecks } from "@/lib/checks";
-import { fmtSlot, fromLocalInput, toLocalInput } from "@/lib/format";
+import { fmtDateTime, fmtSlot, fromLocalInput, toLocalInput } from "@/lib/format";
+import { clearBackup, readBackup, stable, writeBackup, type Backup } from "@/lib/unsaved";
 import type { SlotDraft } from "@/lib/preview";
 import {
   DEFAULT_SETTINGS,
@@ -154,13 +155,26 @@ const TEMPLATES: { label: string; apply: (d: StudyDraft) => { draft: StudyDraft;
   },
 ];
 
+/** What the editor holds: kept in the browser while unsaved, see src/lib/unsaved.ts. */
+interface Snapshot {
+  draft: StudyDraft;
+  questions: Question[];
+  slots: SlotDraft[];
+}
+
 export default function StudyBuilder() {
   const { id } = useParams();
   const nav = useNavigate();
   const toast = useToast();
-  const [draft, setDraft] = useState<StudyDraft | null>(id ? null : blankDraft());
-  const [questions, setQuestions] = useState<Question[]>(id ? [] : [newQuestion(0)]);
-  const [slots, setSlots] = useState<SlotDraft[]>([]);
+  const [initial] = useState<Snapshot | null>(() => (id ? null : { draft: blankDraft(), questions: [newQuestion(0)], slots: [] }));
+  const [draft, setDraft] = useState<StudyDraft | null>(initial?.draft ?? null);
+  const [questions, setQuestions] = useState<Question[]>(initial?.questions ?? []);
+  const [slots, setSlots] = useState<SlotDraft[]>(initial?.slots ?? []);
+  /** The study as loaded (or as last saved), to tell unsaved edits apart. */
+  const [baseline, setBaseline] = useState<string | null>(initial ? stable(initial) : null);
+  /** Unsaved edits found in this browser from an earlier visit, waiting for Restore or Discard. */
+  const [pendingRestore, setPendingRestore] = useState<Backup<Snapshot> | null>(null);
+  const backupKey = `research-desk:study-edit:${id ?? "new"}`;
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -170,7 +184,11 @@ export default function StudyBuilder() {
 
   useEffect(() => {
     getSettings().then(setSettings).catch(() => {});
-    if (!id) return;
+    if (!id) {
+      const b = readBackup<Snapshot>("research-desk:study-edit:new");
+      if (b) setPendingRestore(b);
+      return;
+    }
     getStudy(id)
       .then(async (s) => {
         if (s.type === "session_recruitment" && s.status !== "draft" && s.status !== "scheduled") {
@@ -178,7 +196,7 @@ export default function StudyBuilder() {
           for (const b of await listBookings(s.id)) counts[b.slot_id] = (counts[b.slot_id] ?? 0) + 1;
           setBookedBySlot(counts);
         }
-        setDraft({
+        const d: StudyDraft = {
           id: s.id,
           type: s.type,
           status: s.status,
@@ -194,12 +212,44 @@ export default function StudyBuilder() {
           allow_changes: s.allow_changes ?? true,
           compare_url: s.compare_url ?? null,
           meet: s.meet ?? true,
-        });
-        setQuestions(s.questions.length ? s.questions : s.type === "session_recruitment" ? [] : [newQuestion(0)]);
-        setSlots(s.slots.map((x) => ({ id: x.id, starts_at: x.starts_at, minutes: x.minutes, place: x.place, capacity: x.capacity })));
+        };
+        const qs = s.questions.length ? s.questions : s.type === "session_recruitment" ? [] : [newQuestion(0)];
+        const sl = s.slots.map((x) => ({ id: x.id, starts_at: x.starts_at, minutes: x.minutes, place: x.place, capacity: x.capacity }));
+        setDraft(d);
+        setQuestions(qs);
+        setSlots(sl);
+        const base = stable({ draft: d, questions: qs, slots: sl });
+        setBaseline(base);
+        const b = readBackup<Snapshot>(`research-desk:study-edit:${s.id}`);
+        if (b && stable(b.data) !== base) setPendingRestore(b);
+        else if (b) clearBackup(`research-desk:study-edit:${s.id}`);
       })
       .catch((e: Error) => toast(e.message, "error"));
   }, [id, nav, toast]);
+
+  /** True while the editor holds changes that are not saved yet. */
+  const dirty = useMemo(
+    () => Boolean(draft && baseline !== null && stable({ draft, questions, slots }) !== baseline),
+    [draft, questions, slots, baseline],
+  );
+
+  // Keep unsaved edits in this browser while they exist; wait while an older copy is offered back.
+  useEffect(() => {
+    if (!draft || baseline === null || pendingRestore) return;
+    if (dirty) writeBackup<Snapshot>(backupKey, { draft, questions, slots });
+    else clearBackup(backupKey);
+  }, [draft, questions, slots, baseline, dirty, pendingRestore, backupKey]);
+
+  // Closing or reloading the tab with unsaved edits asks first.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
 
   /** Already in the channel: wording, audience and slots can change; the structure answers point at cannot. */
   const locked = Boolean(draft && draft.status !== "draft" && draft.status !== "scheduled");
@@ -210,6 +260,33 @@ export default function StudyBuilder() {
   const hasErrors = checks.some((c) => c.level === "error");
 
   if (!draft) return <Spinner />;
+
+  /** Puts the unsaved edits back. Status, picture and booked slots stay as the database has them now. */
+  function restoreBackup() {
+    if (!pendingRestore || !draft) return;
+    const b = pendingRestore.data;
+    setDraft({ ...b.draft, id: draft.id, status: draft.status, type: locked ? draft.type : b.draft.type, compare_url: draft.compare_url });
+    setQuestions(b.questions);
+    if (locked) {
+      // A slot booked since then keeps its current time, and one cannot vanish while it has bookings.
+      const current = new Map(slots.map((x) => [x.id, x]));
+      const kept = b.slots.map((x) => (bookedBySlot[x.id] && current.get(x.id) ? { ...x, starts_at: current.get(x.id)!.starts_at, minutes: current.get(x.id)!.minutes } : x));
+      const missing = slots.filter((x) => bookedBySlot[x.id] && !kept.some((k) => k.id === x.id));
+      setSlots([...kept, ...missing]);
+    } else setSlots(b.slots);
+    setPendingRestore(null);
+    toast("Your unsaved changes are back. Save to keep them.");
+  }
+  function discardBackup() {
+    clearBackup(backupKey);
+    setPendingRestore(null);
+  }
+  /** After a save the editor matches the database again, so the browser copy goes and `saved` is the new baseline. */
+  function markSaved(sid: string, saved: Snapshot | null) {
+    clearBackup(backupKey);
+    if (sid !== id) clearBackup(`research-desk:study-edit:${sid}`);
+    setBaseline(saved ? stable(saved) : null);
+  }
 
   const set = <K extends keyof StudyDraft>(k: K, v: StudyDraft[K]) => setDraft({ ...draft, [k]: v });
   const setQ = (i: number, patch: Partial<Question>) =>
@@ -272,7 +349,9 @@ export default function StudyBuilder() {
   async function persist(status: StudyDraft["status"]): Promise<string> {
     const saved = await saveStudy({ ...draft!, status }, draft!.type === "session_recruitment" ? [] : questions, slots);
     const compare_url = await syncComparison(saved, draft!);
-    setDraft({ ...draft!, id: saved, status, compare_url });
+    const next = { ...draft!, id: saved, status, compare_url };
+    setDraft(next);
+    markSaved(saved, { draft: next, questions, slots });
     return saved;
   }
 
@@ -321,6 +400,7 @@ export default function StudyBuilder() {
       const r = await runAdminAction({ action: "delete_study", study_id: draft.id, remove_posts: false });
       if (!r.ok) throw new Error(r.message);
       setConfirmDelete(false);
+      markSaved(draft.id, null);
       toast(r.message);
       nav("/studies");
     });
@@ -329,6 +409,7 @@ export default function StudyBuilder() {
     act("save", async () => {
       if (hasErrors) throw new Error("Fix the errors in the checks panel first.");
       await updatePublishedStudy({ ...draft, id: draft.id! }, questions, slots);
+      markSaved(draft.id!, { draft, questions, slots });
       await syncComparison(draft.id!, draft);
       const r = await runAdminAction({ action: "refresh_post", study_id: draft.id! });
       toast(r.message, r.ok ? "ok" : "error");
@@ -379,6 +460,18 @@ export default function StudyBuilder() {
           )
         }
       />
+
+      {pendingRestore && (
+        <div className="mx-7 mb-4 flex items-center gap-3 rounded-md border border-warn-light bg-warn-light px-4 py-3 text-[13px] text-warn-text">
+          <Icon name="warn" size={16} />
+          <span className="flex-1">
+            {id ? "This study has" : "You have a new study with"} changes from {fmtDateTime(new Date(pendingRestore.at).toISOString())} that were never saved.
+            {locked ? " Slots booked since then keep their current time." : ""}
+          </span>
+          <Button size="sm" variant="primary" onClick={restoreBackup}>Restore them</Button>
+          <Button size="sm" variant="ghost" onClick={discardBackup}>Discard</Button>
+        </div>
+      )}
 
       <ConfirmDialog
         open={confirmDelete}

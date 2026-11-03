@@ -35,8 +35,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Checked once per signed-in user. Supabase hands over a fresh session object whenever the tab regains focus or the
+  // token is refreshed; re-checking on each of those blanked the app behind a spinner and threw away unsaved edits.
+  const userId = session?.user.id ?? null;
   useEffect(() => {
-    if (!session) {
+    if (!userId) {
       setIsAdmin(false);
       setAdminChecked(false);
       return;
@@ -51,7 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       alive = false;
     };
-  }, [session]);
+  }, [userId]);
 
   const value: AuthState = {
     loading,
