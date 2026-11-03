@@ -12,7 +12,7 @@ import { Icon } from "@/components/Icon";
 import { ConfirmDialog } from "@/components/ui/Dialog";
 import { useToast } from "@/components/ui/Toast";
 import { clearComparison, getSettings, getStudy, listBookings, runAdminAction, saveComparison, saveStudy, updatePublishedStudy, uploadStudyImage, type StudyDraft } from "@/data/queries";
-import { runChecks } from "@/lib/checks";
+import { PLACE_MAX, runChecks } from "@/lib/checks";
 import { fmtDateTime, fmtSlot, fromLocalInput, toLocalInput } from "@/lib/format";
 import { clearBackup, readBackup, stable, writeBackup, type Backup } from "@/lib/unsaved";
 import type { SlotDraft } from "@/lib/preview";
@@ -160,6 +160,14 @@ interface Snapshot {
   draft: StudyDraft;
   questions: Question[];
   slots: SlotDraft[];
+}
+
+/** The link to keep from a pasted calendar invite: its Google Meet link if it has one, else its first web link. */
+function firstLink(text: string): { url: string; meet: boolean } | null {
+  const meet = text.match(/https:\/\/meet\.google\.com\/[a-z0-9-]+/i);
+  if (meet) return { url: meet[0], meet: true };
+  const any = text.match(/https?:\/\/[^\s<>"]+/i);
+  return any ? { url: any[0], meet: false } : null;
 }
 
 export default function StudyBuilder() {
@@ -573,27 +581,41 @@ export default function StudyBuilder() {
                   {slots.map((s, i) => {
                     const booked = bookedBySlot[s.id] ?? 0;
                     const fixed = closedLocked || (locked && booked > 0);
+                    const tooLong = s.place.trim().length > PLACE_MAX;
+                    const link = tooLong ? firstLink(s.place) : null;
                     return (
-                      <div key={s.id} className={clsx("grid gap-2 items-center", slotCols)}>
-                        <Input type="datetime-local" disabled={fixed} value={toLocalInput(s.starts_at)} onChange={(e) => setSlot(i, { starts_at: fromLocalInput(e.target.value) ?? s.starts_at })} />
-                        <Select disabled={fixed} value={s.minutes} onChange={(e) => setSlot(i, { minutes: Number(e.target.value) })}>
-                          {MINUTES.map((m) => (
-                            <option key={m} value={m}>{m} min</option>
-                          ))}
-                        </Select>
-                        <Input disabled={closedLocked} value={s.place} onChange={(e) => setSlot(i, { place: e.target.value })} placeholder="Meeting room 2, or a Meet link" />
-                        <Input type="number" disabled={closedLocked} min={Math.max(1, booked)} max={20} value={s.capacity} onChange={(e) => setSlot(i, { capacity: Math.min(20, Math.max(1, booked, Number(e.target.value) || 1)) })} />
-                        {locked && <div className="text-[12.5px] text-ink-2 tabular-nums">{booked}</div>}
-                        <button
-                          type="button"
-                          className="h-7 w-7 grid place-items-center text-muted hover:text-danger cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                          disabled={fixed}
-                          title={locked && booked > 0 ? "A booked slot stays; members cancel from their DM." : undefined}
-                          onClick={() => setSlots(slots.filter((_, si) => si !== i))}
-                          aria-label="Remove slot"
-                        >
-                          <Icon name="x" size={14} />
-                        </button>
+                      <div key={s.id}>
+                        <div className={clsx("grid gap-2 items-center", slotCols)}>
+                          <Input type="datetime-local" disabled={fixed} value={toLocalInput(s.starts_at)} onChange={(e) => setSlot(i, { starts_at: fromLocalInput(e.target.value) ?? s.starts_at })} />
+                          <Select disabled={fixed} value={s.minutes} onChange={(e) => setSlot(i, { minutes: Number(e.target.value) })}>
+                            {MINUTES.map((m) => (
+                              <option key={m} value={m}>{m} min</option>
+                            ))}
+                          </Select>
+                          <Input disabled={closedLocked} value={s.place} onChange={(e) => setSlot(i, { place: e.target.value })} placeholder="Meeting room 2, or a Meet link" />
+                          <Input type="number" disabled={closedLocked} min={Math.max(1, booked)} max={20} value={s.capacity} onChange={(e) => setSlot(i, { capacity: Math.min(20, Math.max(1, booked, Number(e.target.value) || 1)) })} />
+                          {locked && <div className="text-[12.5px] text-ink-2 tabular-nums">{booked}</div>}
+                          <button
+                            type="button"
+                            className="h-7 w-7 grid place-items-center text-muted hover:text-danger cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                            disabled={fixed}
+                            title={locked && booked > 0 ? "A booked slot stays; members cancel from their DM." : undefined}
+                            onClick={() => setSlots(slots.filter((_, si) => si !== i))}
+                            aria-label="Remove slot"
+                          >
+                            <Icon name="x" size={14} />
+                          </button>
+                        </div>
+                        {tooLong && (
+                          <div className="mt-1 flex flex-wrap items-center gap-x-2 text-[12px] text-danger">
+                            <span>Too long for the channel post, which everyone in the channel sees. Keep a room name or just the link.</span>
+                            {link && (
+                              <button type="button" className="font-semibold underline cursor-pointer" onClick={() => setSlot(i, { place: link.url })}>
+                                Keep only the {link.meet ? "Meet " : ""}link
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -790,7 +812,7 @@ export default function StudyBuilder() {
         <div className="space-y-4 sticky top-6">
           <div>
             <Label>Slack preview</Label>
-            <SlackPreview study={draft} questions={questions} slots={slots} channel={settings.channel_name} />
+            <SlackPreview study={draft} questions={questions} slots={slots} booked={bookedBySlot} channel={settings.channel_name} />
           </div>
           <Card title={locked ? "Checks before saving" : "Checks before posting"}>
             {checks.length === 0 ? (

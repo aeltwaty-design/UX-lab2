@@ -11,12 +11,15 @@ export function SlackPreview({
   study,
   questions,
   slots = [],
+  booked = {},
   channel,
   closed,
 }: {
   study: StudyDraftLike;
   questions: Question[];
   slots?: SlotDraft[];
+  /** Active bookings per slot id, so a live study's preview shows the seats that are really left. */
+  booked?: Record<string, number>;
   channel: string;
   closed?: boolean;
 }) {
@@ -103,12 +106,16 @@ export function SlackPreview({
           {sessions && (
             <div className="mt-2.5">
               <div className="text-[13px] text-ink space-y-0.5">
-                {orderedSlots.map((s) => (
-                  <div key={s.id} className="tabular-nums">
-                    {fmtSlot(s.starts_at, s.minutes)}
-                    {s.place ? ` · ${s.place}` : ""} · {s.capacity} of {s.capacity} free
-                  </div>
-                ))}
+                {orderedSlots.map((s) => {
+                  const taken = booked[s.id] ?? 0;
+                  const full = taken >= s.capacity;
+                  return (
+                    <div key={s.id} className={clsx("tabular-nums break-words", full && "line-through text-ink-2")}>
+                      {fmtSlot(s.starts_at, s.minutes)}
+                      {s.place ? ` · ${s.place}` : ""} · {full ? "full" : `${s.capacity - taken} of ${s.capacity} free`}
+                    </div>
+                  );
+                })}
                 {orderedSlots.length === 0 && <div className="text-muted text-[12px]">Add slots to see them here.</div>}
               </div>
               {!closed && orderedSlots.length > 0 && (

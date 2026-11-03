@@ -9,6 +9,9 @@ export function isBad(text: string): boolean {
   return BAD_EN.test(text) || BAD_AR.test(text);
 }
 
+/** Longest place text a slot may have. It goes into the channel post next to every slot, and Slack caps a section at 3,000 characters. */
+export const PLACE_MAX = 150;
+
 export interface Check {
   level: "error" | "warn";
   text: string;
@@ -32,7 +35,10 @@ export function runChecks(study: Study | StudyWithQuestions, questions: Question
       else if (t < now && (!opts.published || s.id.startsWith("tmp-"))) out.push({ level: "error", text: `Slot ${i + 1} is in the past.` });
       if (study.close_at && !Number.isNaN(t) && t < new Date(study.close_at).getTime())
         out.push({ level: "warn", text: `Slot ${i + 1} starts before the round closes; bookings stop when the slot starts.` });
-      texts.push(s.place);
+      // The place is printed in the public channel post, the booking DM and the reminder. A pasted calendar invite
+      // (dial-in numbers, PINs) does not belong there and makes the post too long for Slack.
+      if (s.place.trim().length > PLACE_MAX)
+        out.push({ level: "error", text: `Slot ${i + 1}: the place is too long (${s.place.trim().length} characters, at most ${PLACE_MAX}). Keep a room name or just the Meet link; the whole channel sees it.` });
     });
     const times = slots.map((s) => s.starts_at);
     if (new Set(times).size !== times.length) out.push({ level: "warn", text: "Two slots start at the same time. Use capacity instead, unless they are in different places." });
@@ -71,7 +77,7 @@ export function runChecks(study: Study | StudyWithQuestions, questions: Question
   }
 
   if (texts.some(isBad))
-    out.push({ level: "error", text: "A question mentions PIN, OTP, card or password. Studies never ask for these." });
+    out.push({ level: "error", text: "The title, intro, a question or an option mentions PIN, OTP, card or password. Studies never ask for these." });
 
   if (study.close_at && study.publish_at && new Date(study.close_at) <= new Date(study.publish_at))
     out.push({ level: "error", text: "Close date must be after the publish date." });
