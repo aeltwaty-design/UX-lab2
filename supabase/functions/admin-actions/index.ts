@@ -27,7 +27,7 @@ async function callerIsAdmin(req: Request): Promise<boolean> {
   return Boolean(row);
 }
 
-type Body = { action: string; study_id?: string; announcement_id?: string; booking_id?: string; link?: string; participant_id?: string; text?: string; remove_posts?: boolean; redirect_uri?: string; code?: string; state?: string };
+type Body = { action: string; study_id?: string; announcement_id?: string; booking_id?: string; participant_ids?: string[]; link?: string; participant_id?: string; text?: string; remove_posts?: boolean; redirect_uri?: string; code?: string; state?: string };
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -47,7 +47,8 @@ Deno.serve(async (req) => {
       case "close_now":
         return reply(await closeStudy(id));
       case "remind":
-        return reply(await remindStudy(id));
+        // participant_ids: the names left ticked on the study page. Absent = everyone still waiting (the automatic path).
+        return reply(await remindStudy(id, Array.isArray(body.participant_ids) ? body.participant_ids.filter((x) => typeof x === "string") : undefined));
       case "post_results":
         return reply(await postResults(id));
       case "repost_profile":

@@ -406,7 +406,7 @@ export async function saveAnnouncement(d: AnnouncementDraft): Promise<Announceme
 export type AdminAction =
   | { action: "publish_now"; study_id: string }
   | { action: "close_now"; study_id: string }
-  | { action: "remind"; study_id: string }
+  | { action: "remind"; study_id: string; participant_ids?: string[] }
   | { action: "post_results"; study_id: string }
   | { action: "repost_profile" }
   | { action: "remind_missing_profiles" }

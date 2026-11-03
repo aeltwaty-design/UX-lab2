@@ -75,13 +75,20 @@ async function nonResponders(study: Study): Promise<Participant[]> {
   return ((people ?? []) as Participant[]).filter((p) => !answered.has(p.id) && inAudience(study, p));
 }
 
-/** DMs everyone in the audience who has not answered, except members excluded from reminders. */
-export async function remindStudy(id: string): Promise<Outcome> {
+/**
+ * DMs everyone in the audience who has not answered, except members excluded from reminders.
+ * `only`: the participant ids the admin left ticked on the study page; everyone else waiting is left out this time.
+ */
+export async function remindStudy(id: string, only?: string[]): Promise<Outcome> {
   const [study, settings] = await Promise.all([getStudy(id), getSettings()]);
   if (study.status !== "live") return { ok: false, message: "Only a live study can be reminded." };
   const [all, excluded] = await Promise.all([nonResponders(study), reminderExclusions()]);
-  const people = all.filter((p) => !excluded.has(p.slack_user_id));
-  const skipped = all.length - people.length;
+  const reachable = all.filter((p) => !excluded.has(p.slack_user_id));
+  const picked = only ? new Set(only) : null;
+  const people = picked ? reachable.filter((p) => picked.has(p.id)) : reachable;
+  const skipped = all.length - reachable.length;
+  const unticked = reachable.length - people.length;
+  if (!people.length) return { ok: false, message: picked ? "Nobody you ticked is still waiting. Tick at least one name." : "Nobody to remind." };
   const link = study.slack_channel_id && study.slack_ts ? await permalink(study.slack_channel_id, study.slack_ts) : "";
   const sessions = study.type === "session_recruitment";
   let sent = 0;
@@ -100,7 +107,10 @@ export async function remindStudy(id: string): Promise<Outcome> {
   }
   const { error } = await db.from("studies").update({ reminder_sent_at: new Date().toISOString() }).eq("id", id);
   if (error) throw error;
-  return { ok: true, message: `Reminded ${sent} of ${people.length} by DM.${skipped ? ` ${skipped} excluded from reminders.` : ""}` };
+  return {
+    ok: true,
+    message: `Reminded ${sent} of ${people.length} by DM.${unticked ? ` ${unticked} left unticked.` : ""}${skipped ? ` ${skipped} excluded from reminders.` : ""}`,
+  };
 }
 
 /** Posts the results post to the channel and marks the study reported. */

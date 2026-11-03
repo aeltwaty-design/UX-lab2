@@ -50,6 +50,8 @@ export default function StudyResults() {
   const [post, setPost] = useState<ResultsPost | null>(null);
   /** Slack ids of members excluded from reminder DMs on the Participants page. */
   const [noRemind, setNoRemind] = useState<Set<string>>(new Set());
+  /** Participant ids the admin unticked under "Not yet booked/answered": left out of this reminder. Everyone else is ticked. */
+  const [unticked, setUnticked] = useState<Set<string>>(new Set());
   const [split, setSplit] = useState<SplitKey>("none");
   const [qIndex, setQIndex] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
@@ -116,7 +118,7 @@ export default function StudyResults() {
       setBusy(null);
     }
   }
-  const slack = (action: "publish_now" | "close_now" | "remind") => () =>
+  const slack = (action: "publish_now" | "close_now") => () =>
     act(action, async () => {
       const r = await runAdminAction({ action, study_id: id });
       if (!r.ok) throw new Error(r.message);
@@ -166,7 +168,23 @@ export default function StudyResults() {
   const reach = eligible.length ? pct(answered, eligible.length) : 0;
   const answeredIds = new Set(sessions ? bookings.map((b) => b.participant_id) : responses.map((r) => r.participant_id));
   const missing = eligible.filter((p) => !answeredIds.has(p.id));
-  const toRemind = missing.filter((p) => !noRemind.has(p.slack_user_id));
+  /** Waiting, and not switched off on the Participants page: the names that can be ticked. */
+  const reachable = missing.filter((p) => !noRemind.has(p.slack_user_id));
+  const toRemind = reachable.filter((p) => !unticked.has(p.id));
+  const tick = (pid: string) =>
+    setUnticked((u) => {
+      const next = new Set(u);
+      if (next.has(pid)) next.delete(pid);
+      else next.add(pid);
+      return next;
+    });
+  // Sends to exactly the ticked names on screen, so someone who becomes eligible after the page loaded is not DMed unseen.
+  const remind = () =>
+    act("remind", async () => {
+      const r = await runAdminAction({ action: "remind", study_id: id, participant_ids: toRemind.map((p) => p.id) });
+      if (!r.ok) throw new Error(r.message);
+      return r.message;
+    });
   const isLive = study.status === "live";
   const days =
     isLive && study.close_at ? Math.max(0, daysBetween(now, study.close_at)) : study.closed_at ? daysBetween(study.closed_at, now) : null;
@@ -217,7 +235,7 @@ export default function StudyResults() {
             )}
             {isLive && (
               <>
-                <Button icon="bell" loading={busy === "remind"} disabled={!toRemind.length} onClick={slack("remind")}>
+                <Button icon="bell" loading={busy === "remind"} disabled={!toRemind.length} onClick={remind}>
                   Remind {toRemind.length} by DM
                 </Button>
                 <Button variant="danger" loading={busy === "close_now"} onClick={slack("close_now")}>Close now</Button>
@@ -481,26 +499,67 @@ export default function StudyResults() {
                 )}
               </Card>
 
-              <Card title={sessions ? "Not yet booked" : "Not yet answered"}>
+              <Card
+                title={sessions ? "Not yet booked" : "Not yet answered"}
+                action={
+                  isLive && reachable.length > 0 ? (
+                    <span className="text-[12px] text-muted flex items-center gap-2">
+                      <span className="tabular-nums">{toRemind.length} of {reachable.length} ticked</span>·
+                      <button type="button" className="text-brand-text font-semibold hover:underline cursor-pointer disabled:text-muted disabled:no-underline disabled:cursor-default" disabled={unticked.size === 0} onClick={() => setUnticked(new Set())}>
+                        All
+                      </button>
+                      <button type="button" className="text-brand-text font-semibold hover:underline cursor-pointer disabled:text-muted disabled:no-underline disabled:cursor-default" disabled={toRemind.length === 0} onClick={() => setUnticked(new Set(reachable.map((p) => p.id)))}>
+                        None
+                      </button>
+                    </span>
+                  ) : undefined
+                }
+              >
                 {missing.length === 0 ? (
                   <div className="text-[13px] text-brand-text">Everyone with a profile has {noun}.</div>
-                ) : (
+                ) : isLive ? (
                   <>
                     <div className="flex flex-wrap gap-1.5">
-                      {missing.slice(0, 30).map((p) => (
-                        <Chip key={p.id} tone="neutral">
-                          {noRemind.has(p.slack_user_id) ? <span className="line-through opacity-70" title="Excluded from reminders">{p.name}</span> : p.name}
-                        </Chip>
-                      ))}
-                      {missing.length > 30 && <Chip tone="neutral">+{missing.length - 30} more</Chip>}
+                      {missing.map((p) => {
+                        const out = noRemind.has(p.slack_user_id);
+                        const on = !out && !unticked.has(p.id);
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            role="checkbox"
+                            aria-checked={on}
+                            disabled={out}
+                            onClick={() => tick(p.id)}
+                            title={out ? "Switched off for reminders on the Participants page" : on ? "Gets the reminder. Click to leave out." : "Left out. Click to include."}
+                            className={clsx(
+                              "inline-flex items-center gap-1.5 h-[26px] pl-1.5 pr-2.5 rounded-full border text-[12px] font-medium whitespace-nowrap transition-colors",
+                              on ? "bg-brand-light text-brand-text border-brand-light" : "bg-white text-muted border-line",
+                              out ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:border-brand",
+                            )}
+                          >
+                            <span className={clsx("h-3.5 w-3.5 rounded-[4px] border grid place-items-center shrink-0", on ? "bg-brand border-brand text-brand-ink" : "bg-white border-line")}>
+                              {on && <Icon name="check" size={10} />}
+                            </span>
+                            <span className={clsx(out && "line-through")}>{p.name}</span>
+                          </button>
+                        );
+                      })}
                     </div>
-                    {isLive && (
-                      <p className="text-[11.5px] text-muted mt-2">
-                        The reminder DM links to the post. One reminder per study, sent by you.
-                        {missing.length > toRemind.length && ` ${missing.length - toRemind.length} excluded from reminders on the Participants page (struck through) get no DM.`}
-                      </p>
-                    )}
+                    <p className="text-[11.5px] text-muted mt-2">
+                      Untick anyone to leave them out of this reminder; "Remind {toRemind.length} by DM" sends to the ticked names only. The DM links to the post. Once you send a reminder, the automatic one the day before close is skipped.
+                      {missing.length > reachable.length && ` ${missing.length - reachable.length} switched off for reminders on the Participants page (struck through) get no DM.`}
+                    </p>
                   </>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {missing.slice(0, 30).map((p) => (
+                      <Chip key={p.id} tone="neutral">
+                        {p.name}
+                      </Chip>
+                    ))}
+                    {missing.length > 30 && <Chip tone="neutral">+{missing.length - 30} more</Chip>}
+                  </div>
                 )}
               </Card>
 
