@@ -1,5 +1,5 @@
 import { clsx } from "clsx";
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import type { ComponentProps, ReactNode, SelectHTMLAttributes } from "react";
 
 const BASE =
   "w-full bg-white border border-line rounded-sm text-[13px] text-ink placeholder:text-muted/70 " +
@@ -14,11 +14,12 @@ export function Label({ children, hint, className }: { children: ReactNode; hint
   );
 }
 
-export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
+/** Takes a ref like the element it wraps (React 19 passes ref as a prop). */
+export function Input({ className, ...rest }: ComponentProps<"input">) {
   return <input className={clsx(BASE, "h-9 px-3", className)} {...rest} />;
 }
 
-export function Textarea({ className, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export function Textarea({ className, ...rest }: ComponentProps<"textarea">) {
   return <textarea className={clsx(BASE, "px-3 py-2 min-h-20 resize-y", className)} {...rest} />;
 }
 

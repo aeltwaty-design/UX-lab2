@@ -1,6 +1,7 @@
 // Block Kit builders. Every message is bilingual. Study posts, the survey form and results posts put Arabic first, then English.
 import type { Block } from "./slack.ts";
 import { fmtDate, fmtSlot, smallGroup, type Announcement, type Option, type Question, type SessionSlot, type Settings, type SlotWithBookings, type Study } from "./db.ts";
+import { fillReminder, HEADER_MAX, mergeReminders, PROFILE_BUTTON, PROFILE_FOOTER, TEXT_MAX } from "./reminders.ts";
 
 const AGE_BANDS = ["18-24", "25-34", "35-44", "45+"];
 const LETTERS = ["A", "B", "C", "D", "E", "F"];
@@ -128,10 +129,9 @@ function channelLabel(settings: Settings): string {
 const profileButton = (): Block => ({
   type: "actions",
   block_id: "profile",
-  elements: [{ type: "button", style: "primary", text: pt("✍️ عبّئ ملفي · Fill in my profile"), action_id: "profile:open", value: "open" }],
+  elements: [{ type: "button", style: "primary", text: pt(PROFILE_BUTTON), action_id: "profile:open", value: "open" }],
 });
-const profileFooter = (): Block =>
-  ctx("🔒 لا نطلب أبداً رقم PIN أو رمز التحقق أو بيانات البطاقة أو كلمة المرور. يمكنك طلب حذف بياناتك في أي وقت.\nNever asked: PIN, OTP, card or password. You can ask to be forgotten at any time.");
+const profileFooter = (): Block => ctx(PROFILE_FOOTER);
 
 /** The pinned channel post, also sent by DM to newcomers: what the channel is for, then the one-time profile. Arabic first. */
 export function profilePromptBlocks(settings: Settings): Block[] {
@@ -156,25 +156,28 @@ export function profilePromptText(settings: Settings): string {
   return `أهلاً بك في ${settings.channel_name} · Welcome to ${settings.channel_name}`;
 }
 
-/** The reminder DM for a member without a profile: sent when a study goes live and from "Remind N without a profile". Arabic first. */
+/**
+ * The reminder DM for a member without a profile: sent when a study goes live and from "Remind N without a profile".
+ * Arabic first. The wording comes from the Reminders page (defaults in reminders.ts); the button and footer stay as in the welcome post.
+ */
 export function profileReminderBlocks(settings: Settings): Block[] {
-  const ch = settings.channel_name;
-  return [
-    { type: "header", text: pt("⏰ تذكير: ملفك لم يُعبّأ بعد") },
-    md(
-      `*📝 عبّئ ملفك مرة واحدة (دقيقة واحدة)*\nللمشاركة في استطلاعات ${ch} ومقارنات التصميم والجلسات، تحتاج أولاً إلى تعبئة ملفك. اضغط الزر وراجع بياناتك قبل الحفظ، فهو يُحفظ مرة واحدة ولا يمكن تغييره ✅\n🔗 كل إجابة ترتبط بملفك، حتى نتابع معك ونفهم تجربة كل فريق.`,
-    ),
-    md(
-      `*⏰ Reminder: your profile is still missing*\nTo take part in the polls, design comparisons and sessions in ${ch}, fill in your profile first (one minute, once only). Tap the button and check your details before you save: it is saved once and cannot be changed ✅\n🔗 Every answer is linked to your profile, so we can follow up and see how each team experiences the apps.`,
-    ),
-    profileButton(),
-    profileFooter(),
-  ];
+  const t = mergeReminders(settings.reminder_texts).profile;
+  const values = { channel: settings.channel_name };
+  const blocks: Block[] = [];
+  const header = fillReminder(t.header, values).replace(/\s+/g, " ").slice(0, HEADER_MAX);
+  // Not pt(), which cuts at a button's 75 characters: a header block takes 150.
+  if (header) blocks.push({ type: "header", text: { type: "plain_text", text: header, emoji: true } });
+  for (const body of [t.body_ar, t.body_en]) {
+    const text = fillReminder(body, values).slice(0, TEXT_MAX);
+    if (text) blocks.push(md(text));
+  }
+  blocks.push(profileButton(), profileFooter());
+  return blocks;
 }
 
 /** The notification line of the reminder DM. */
 export function profileReminderText(settings: Settings): string {
-  return `⏰ تذكير: عبّئ ملفك للمشاركة في ${settings.channel_name} · Reminder: fill in your profile to take part in ${settings.channel_name}`;
+  return fillReminder(mergeReminders(settings.reminder_texts).profile.notify, { channel: settings.channel_name }).slice(0, TEXT_MAX);
 }
 
 export interface Pending {

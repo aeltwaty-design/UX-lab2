@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import type { SlotDraft } from "@/lib/preview";
 import { composeComparison, type CompareOption } from "@/lib/compare";
+import { mergeReminders, reminderOverrides, type ReminderTexts } from "@/lib/reminders";
 import {
   DEFAULT_SETTINGS,
   type Announcement,
@@ -238,6 +239,13 @@ export async function listBookings(studyId: string): Promise<SessionBooking[]> {
   return (data ?? []) as SessionBooking[];
 }
 
+/** A study's session slots in time order, without the rest of the study. */
+export async function listSlots(studyId: string): Promise<SessionSlot[]> {
+  const { data, error } = await supabase.from("session_slots").select("*").eq("study_id", studyId).order("starts_at");
+  if (error) fail(error);
+  return (data ?? []) as SessionSlot[];
+}
+
 export async function setStudyStatus(id: string, status: Study["status"]): Promise<void> {
   const { error } = await supabase.from("studies").update({ status }).eq("id", id);
   if (error) fail(error);
@@ -353,10 +361,34 @@ export async function getSettings(): Promise<Settings> {
   return out as unknown as Settings;
 }
 
+/**
+ * The keys the Settings page edits. The bot keeps its own keys in the same table (pinned post ids, digest times, the
+ * reminder wording), so saving the page writes only these and never an older copy of the others.
+ */
+const SETTINGS_KEYS: (keyof Settings)[] = ["channel_id", "channel_name", "workspace_url", "hours_cap", "small_group", "default_lang", "teams"];
+
 export async function saveSettings(s: Settings): Promise<void> {
-  const rows = (Object.keys(s) as (keyof Settings)[]).map((key) => ({ key, value: s[key] }));
+  const rows = SETTINGS_KEYS.map((key) => ({ key, value: s[key] }));
   const { error } = await supabase.from("settings").upsert(rows, { onConflict: "key" });
   if (error) fail(error);
+}
+
+/** The reminder wording the bot uses: the saved texts on top of the defaults. */
+export async function getReminderTexts(): Promise<ReminderTexts> {
+  const { data, error } = await supabase.from("settings").select("value").eq("key", "reminder_texts").maybeSingle();
+  if (error) fail(error);
+  return mergeReminders((data as { value: unknown } | null)?.value);
+}
+
+/**
+ * Stores only the texts that differ from the defaults, so a text left as it was follows the default. Returns the wording
+ * as the bot will now read it.
+ */
+export async function saveReminderTexts(texts: ReminderTexts): Promise<ReminderTexts> {
+  const value = reminderOverrides(texts);
+  const { error } = await supabase.from("settings").upsert({ key: "reminder_texts", value }, { onConflict: "key" });
+  if (error) fail(error);
+  return mergeReminders(value);
 }
 
 export async function listAdmins(): Promise<string[]> {

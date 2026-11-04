@@ -27,6 +27,8 @@ export interface Settings {
   friction_files_ok?: boolean;
   /** The one-time state of a Google sign-in started from Settings → Connect. */
   google_oauth_state?: { state: string; redirect: string; at: string };
+  /** Reminder wording edited on the dashboard's Reminders page: only the texts that differ from the defaults. */
+  reminder_texts?: unknown;
 }
 
 export async function getSettings(): Promise<Settings> {

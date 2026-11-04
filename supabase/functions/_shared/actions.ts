@@ -2,6 +2,7 @@
 import { channelMemberIds, deleteMessage, displayName, dm, downloadFile, listUsers, permalink, pin, postEphemeral, postMessage, slack, SlackError, sleep, updateMessage, userInfo } from "./slack.ts";
 import { countResponses, db, fmtSlot, getAnnouncement, getSettings, getSlots, getStudy, hasAnswered, inAudience, riyadh, setSetting, snapshot, weekKey, type Participant, type Settings, type SlotWithBookings, type Study } from "./db.ts";
 import { announcementBlocks, announcementText, frictionDigestBlocks, frictionPromptBlocks, profilePromptBlocks, profilePromptText, profileReminderBlocks, profileReminderText, resultsBlocks, resultsText, studyBlocks, studyText, totalsText, type SlotCalendar } from "./blocks.ts";
+import { fillReminder, mergeReminders, TEXT_MAX } from "./reminders.ts";
 import { deleteStudyEvents, syncSlotEvent, syncStudyEvents } from "./google.ts";
 
 export interface Outcome {
@@ -91,12 +92,14 @@ export async function remindStudy(id: string, only?: string[]): Promise<Outcome>
   if (!people.length) return { ok: false, message: picked ? "Nobody you ticked is still waiting. Tick at least one name." : "Nobody to remind." };
   const link = study.slack_channel_id && study.slack_ts ? await permalink(study.slack_channel_id, study.slack_ts) : "";
   const sessions = study.type === "session_recruitment";
+  const texts = mergeReminders(settings.reminder_texts);
+  const tpl = sessions ? texts.study_book : texts.study_answer;
+  const base = { title_ar: study.title_ar || study.title_en, title_en: study.title_en, channel: settings.channel_name, closes: fmt(study.close_at), link };
   let sent = 0;
   for (const p of people) {
     const ar = p.language === "ar";
-    const text = ar
-      ? `تذكير لطيف: ${sessions ? "لم تحجز موعداً بعد في" : "لم تُجب بعد على"} "${study.title_ar || study.title_en}" في ${settings.channel_name}. تُغلق ${fmt(study.close_at)}. ${link}`
-      : `A gentle reminder: you have not ${sessions ? "booked a slot for" : "answered"} "${study.title_en}" in ${settings.channel_name} yet. It closes ${fmt(study.close_at)}. ${link}`;
+    const text = fillReminder(ar ? tpl.ar : tpl.en, { ...base, title: ar ? base.title_ar : base.title_en }).slice(0, TEXT_MAX);
+    if (!text) continue;
     try {
       await dm(p.slack_user_id, text);
       sent++;
@@ -556,8 +559,9 @@ export async function removeBooking(bookingId: string, note: string): Promise<Ou
   return { ok: true, message: `Removed ${name}'s booking${told}. The seat is free again.` };
 }
 
-/** DMs everyone whose session starts within the next day. Once per booking. */
+/** DMs everyone whose session starts within the next day. Once per booking. The wording comes from the Reminders page. */
 export async function sessionReminders(): Promise<Outcome> {
+  const tpl = mergeReminders((await getSettings()).reminder_texts).session;
   const { data, error } = await db
     .from("session_bookings")
     .select("id, participant:participants(slack_user_id, language, deleted_at), slot:session_slots(starts_at, minutes, place, meet_url), study:studies(title_en, title_ar)")
@@ -576,11 +580,20 @@ export async function sessionReminders(): Promise<Outcome> {
     if (!b.slot || !b.participant || b.participant.deleted_at) continue;
     const t = new Date(b.slot.starts_at).getTime();
     if (t < now || t > now + 24 * 3600_000) continue;
-    const when = `${fmtSlot(b.slot.starts_at, b.slot.minutes)}${b.slot.place ? ` · ${b.slot.place}` : ""}`;
-    const meet = b.slot.meet_url;
-    const text = b.participant.language === "ar"
-      ? `تذكير: جلسة "${b.study?.title_ar || b.study?.title_en || ""}" ${when}.${meet ? ` رابط Google Meet: ${meet}` : ""} إن لم تستطع الحضور، ألغِ الحجز من رسالة التأكيد.`
-      : `Reminder: your session "${b.study?.title_en ?? ""}" is ${when}.${meet ? ` Google Meet: ${meet}` : ""} If you cannot make it, cancel from the booking message.`;
+    const time = fmtSlot(b.slot.starts_at, b.slot.minutes);
+    const place = b.slot.place ?? "";
+    const ar = b.participant.language === "ar";
+    const titleAr = b.study?.title_ar || b.study?.title_en || "";
+    const titleEn = b.study?.title_en ?? "";
+    const text = fillReminder(ar ? tpl.ar : tpl.en, {
+      title: ar ? titleAr : titleEn,
+      title_ar: titleAr,
+      title_en: titleEn,
+      when: `${time}${place ? ` · ${place}` : ""}`,
+      time,
+      place,
+      meet: b.slot.meet_url ?? "",
+    }).slice(0, TEXT_MAX);
     try {
       await dm(b.participant.slack_user_id, text);
       sent++;

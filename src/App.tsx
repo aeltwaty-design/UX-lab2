@@ -14,6 +14,7 @@ import ResultsPost from "@/pages/ResultsPost";
 import Announcements from "@/pages/Announcements";
 import AnnouncementEditor from "@/pages/AnnouncementEditor";
 import Participants from "@/pages/Participants";
+import Reminders from "@/pages/Reminders";
 import Friction from "@/pages/Friction";
 import Settings from "@/pages/Settings";
 
@@ -77,6 +78,7 @@ export default function App() {
             <Route path="/announcements/new" element={<AnnouncementEditor />} />
             <Route path="/announcements/:id" element={<AnnouncementEditor />} />
             <Route path="/participants" element={<Participants />} />
+            <Route path="/reminders" element={<Reminders />} />
             <Route path="/friction" element={<Friction />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/studies" replace />} />

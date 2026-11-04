@@ -10,6 +10,7 @@ const NAV: { to: string; label: string; icon: IconName }[] = [
   { to: "/studies", label: "Studies", icon: "studies" },
   { to: "/announcements", label: "Announcements", icon: "bell" },
   { to: "/participants", label: "Participants", icon: "users" },
+  { to: "/reminders", label: "Reminders", icon: "clock" },
   { to: "/friction", label: "Friction inbox", icon: "inbox" },
   { to: "/settings", label: "Settings", icon: "settings" },
 ];

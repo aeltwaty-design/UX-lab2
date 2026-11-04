@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { clsx } from "clsx";
 import { PageHeader } from "@/components/AppShell";
 import { Bar } from "@/components/Bar";
+import { TwoLanguageDms } from "@/components/DmPreview";
 import { StatTile } from "@/components/StatTile";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -12,8 +13,9 @@ import { Empty, Spinner } from "@/components/ui/Empty";
 import { Select, Textarea, Toggle } from "@/components/ui/Field";
 import { Icon } from "@/components/Icon";
 import { useToast } from "@/components/ui/Toast";
-import { getResultsPost, getStudy, listBookings, listParticipants, listReminderExclusions, listResponses, runAdminAction } from "@/data/queries";
+import { getReminderTexts, getResultsPost, getSettings, getStudy, listBookings, listParticipants, listReminderExclusions, listResponses, runAdminAction } from "@/data/queries";
 import { daysBetween, fmtDate, fmtDateTime, fmtSlot, pct, typeLabel } from "@/lib/format";
+import { studyValues, type ReminderTexts } from "@/lib/reminders";
 import { answerSummary, groupBy, scaleMean, segmentOf, SPLITS, tally, textAnswers, type SplitKey } from "@/lib/results";
 import { STATUS_LABEL, type Participant, type Response, type ResultsPost, type SessionBooking, type SessionSlot, type StudyWithQuestions } from "@/lib/types";
 import { audienceLabel } from "./Studies";
@@ -61,6 +63,9 @@ export default function StudyResults() {
   const [removing, setRemoving] = useState<SessionBooking | null>(null);
   const [tellThem, setTellThem] = useState(true);
   const [removalText, setRemovalText] = useState("");
+  /** The reminder DM preview under "Not yet booked/answered": the wording and channel, loaded the first time it opens. */
+  const [showDm, setShowDm] = useState(false);
+  const [dm, setDm] = useState<{ texts: ReminderTexts; channel: string; workspace: string } | null>(null);
 
   const load = useCallback(() => {
     getStudy(id)
@@ -136,6 +141,14 @@ export default function StudyResults() {
       toast((e as Error).message, "error");
       setBusy(null);
     }
+  }
+
+  function toggleDm() {
+    setShowDm((v) => !v);
+    if (dm) return;
+    Promise.all([getReminderTexts(), getSettings()])
+      .then(([texts, s]) => setDm({ texts, channel: s.channel_name, workspace: s.workspace_url }))
+      .catch((e: Error) => toast(e.message, "error"));
   }
 
   function askRemove(b: SessionBooking) {
@@ -550,6 +563,38 @@ export default function StudyResults() {
                       Untick anyone to leave them out of this reminder; "Remind {toRemind.length} by DM" sends to the ticked names only. The DM links to the post. Once you send a reminder, the automatic one the day before close is skipped.
                       {missing.length > reachable.length && ` ${missing.length - reachable.length} switched off for reminders on the Participants page (struck through) get no DM.`}
                     </p>
+                    <div className="mt-3 pt-3 border-t border-line-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <button
+                          type="button"
+                          aria-expanded={showDm}
+                          onClick={toggleDm}
+                          className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-brand-text hover:underline cursor-pointer"
+                        >
+                          <Icon name="eye" size={13} /> {showDm ? "Hide the DM" : "Preview the DM"}
+                        </button>
+                        {showDm && (
+                          <Link to={`/reminders#${sessions ? "study_book" : "study_answer"}`} className="text-[12px] text-muted hover:text-ink">
+                            Edit the wording on Reminders
+                          </Link>
+                        )}
+                      </div>
+                      {showDm &&
+                        (dm ? (
+                          <div className="mt-2.5">
+                            <TwoLanguageDms
+                              tpl={sessions ? dm.texts.study_book : dm.texts.study_answer}
+                              values={(lang) => studyValues(study, dm.channel, dm.workspace, lang)}
+                              label={(lang) => {
+                                const n = toRemind.filter((p) => (p.language === "ar") === (lang === "ar")).length;
+                                return `${n} ticked ${n === 1 ? "member" : "members"} with ${lang === "ar" ? "an Arabic" : "an English"} profile`;
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <Spinner label="Loading the DM" />
+                        ))}
+                    </div>
                   </>
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
