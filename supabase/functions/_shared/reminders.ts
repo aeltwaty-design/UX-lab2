@@ -118,7 +118,7 @@ const TOKEN = /\{(\w+)\}/g;
 export function unknownPlaceholders(text: string, key: ReminderKey): string[] {
   const known = PLACEHOLDERS[key];
   const bad = new Set<string>();
-  for (const m of text.matchAll(TOKEN)) if (!(m[1] in known)) bad.add(m[1]);
+  for (const m of text.matchAll(TOKEN)) if (!Object.hasOwn(known, m[1])) bad.add(m[1]);
   return [...bad];
 }
 
@@ -129,9 +129,9 @@ export function unknownPlaceholders(text: string, key: ReminderKey): string[] {
 export function fillReminder(text: string, values: Record<string, string>): string {
   const lines: string[] = [];
   for (const line of text.split("\n")) {
-    const used = [...line.matchAll(TOKEN)].map((m) => m[1]).filter((k) => k in values);
+    const used = [...line.matchAll(TOKEN)].map((m) => m[1]).filter((k) => Object.hasOwn(values, k));
     if (used.length && used.every((k) => !values[k])) continue;
-    lines.push(line.replace(TOKEN, (whole, k: string) => (k in values ? values[k] : whole)).replace(/[ \t]+$/, ""));
+    lines.push(line.replace(TOKEN, (whole, k: string) => (Object.hasOwn(values, k) ? values[k] : whole)).replace(/[ \t]+$/, ""));
   }
   return lines.join("\n").trim();
 }
