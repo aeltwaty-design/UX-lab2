@@ -576,7 +576,7 @@ export default function StudyBuilder() {
               ) : (
                 <div className="space-y-2">
                   <div className={clsx("grid gap-2 text-[11.5px] font-semibold uppercase tracking-[0.04em] text-muted", slotCols)}>
-                    <div>Starts (your local time)</div><div>Length</div><div>Place or link</div><div>Seats</div>{locked && <div>Booked</div>}<div />
+                    <div>Starts (Riyadh time)</div><div>Length</div><div>Place or link</div><div>Seats</div>{locked && <div>Booked</div>}<div />
                   </div>
                   {slots.map((s, i) => {
                     const booked = bookedBySlot[s.id] ?? 0;
@@ -795,11 +795,11 @@ export default function StudyBuilder() {
                 </div>
               )}
               <div>
-                <Label>Publish</Label>
+                <Label hint="Riyadh time">Publish</Label>
                 <Input type="datetime-local" disabled={locked} value={toLocalInput(draft.publish_at)} onChange={(e) => set("publish_at", fromLocalInput(e.target.value))} />
               </div>
               <div>
-                <Label>Close</Label>
+                <Label hint="Riyadh time">Close</Label>
                 <Input type="datetime-local" disabled={closedLocked} value={toLocalInput(draft.close_at)} onChange={(e) => set("close_at", fromLocalInput(e.target.value))} />
               </div>
               <div className="text-[12px] text-muted self-end pb-2">

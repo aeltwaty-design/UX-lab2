@@ -1,11 +1,14 @@
 import type { StudyStatus, StudyType } from "./types";
 
-const DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" });
+// Every date and time on the dashboard is Riyadh time, like the bot's posts, whatever time zone the admin's computer is in.
+const RIYADH = "Asia/Riyadh";
+const DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: RIYADH });
 const DATE_TIME = new Intl.DateTimeFormat("en-GB", {
   day: "numeric",
   month: "short",
   hour: "2-digit",
   minute: "2-digit",
+  timeZone: RIYADH,
 });
 
 export function fmtDate(iso: string | null | undefined): string {
@@ -18,7 +21,6 @@ export function fmtDateTime(iso: string | null | undefined): string {
   return DATE_TIME.format(new Date(iso));
 }
 
-const RIYADH = "Asia/Riyadh";
 const SLOT_DAY = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: RIYADH });
 const SLOT_TIME = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: RIYADH });
 
@@ -30,18 +32,23 @@ export function fmtSlot(startsAt: string, minutes: number): string {
   return `${SLOT_DAY.format(start)} · ${SLOT_TIME.format(start)}–${SLOT_TIME.format(end)}`;
 }
 
-/** Value for an <input type="datetime-local"> from an ISO string, in local time. */
+/** Riyadh is UTC+3 all year (no daylight saving). */
+const RIYADH_OFFSET = 3 * 3_600_000;
+
+/** Value for an <input type="datetime-local"> from an ISO string, in Riyadh time. */
 export function toLocalInput(iso: string | null | undefined): string {
   if (!iso) return "";
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "";
+  return new Date(t + RIYADH_OFFSET).toISOString().slice(0, 16);
 }
 
+/** An <input type="datetime-local"> value, read as Riyadh time, to an ISO string. */
 export function fromLocalInput(v: string): string | null {
-  if (!v) return null;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(v);
+  if (!m) return null;
+  const t = Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!, +m[4]!, +m[5]!) - RIYADH_OFFSET;
+  return Number.isNaN(t) ? null : new Date(t).toISOString();
 }
 
 export function pct(n: number, total: number): number {

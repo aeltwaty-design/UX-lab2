@@ -189,7 +189,7 @@ export default function AnnouncementEditor() {
               />
               {!posted && (
                 <div>
-                  <Label hint="leave empty and use Post now to send it by hand">Schedule for</Label>
+                  <Label hint="Riyadh time; leave empty and use Post now to send it by hand">Schedule for</Label>
                   <Input type="datetime-local" value={toLocalInput(draft.publish_at)} onChange={(e) => set("publish_at", fromLocalInput(e.target.value))} />
                   <div className="text-[12px] text-muted mt-1">The scheduler runs every five minutes, so the post lands within five minutes of this time.</div>
                 </div>
