@@ -1,6 +1,6 @@
 // The operations behind every Slack-facing button, shared by the four functions.
 import { channelMemberIds, deleteMessage, displayName, dm, downloadFile, listUsers, permalink, pin, postEphemeral, postMessage, slack, SlackError, sleep, updateMessage, userInfo } from "./slack.ts";
-import { countResponses, db, fmtSlot, getAnnouncement, getSettings, getSlots, getStudy, hasAnswered, inAudience, riyadh, setSetting, snapshot, weekKey, type Participant, type Settings, type SlotWithBookings, type Study } from "./db.ts";
+import { countResponses, db, fmtSlot, fmtSlotAr, getAnnouncement, getSettings, getSlots, getStudy, hasAnswered, inAudience, riyadh, setSetting, snapshot, weekKey, type Participant, type Settings, type SlotWithBookings, type Study } from "./db.ts";
 import { announcementBlocks, announcementText, frictionDigestBlocks, frictionPromptBlocks, profilePromptBlocks, profilePromptText, profileReminderBlocks, profileReminderText, resultsBlocks, resultsText, studyBlocks, studyText, totalsText, type SlotCalendar } from "./blocks.ts";
 import { fillReminder, mergeReminders, TEXT_MAX } from "./reminders.ts";
 import { deleteStudyEvents, syncSlotEvent, syncStudyEvents } from "./google.ts";
@@ -580,9 +580,9 @@ export async function sessionReminders(): Promise<Outcome> {
     if (!b.slot || !b.participant || b.participant.deleted_at) continue;
     const t = new Date(b.slot.starts_at).getTime();
     if (t < now || t > now + 24 * 3600_000) continue;
-    const time = fmtSlot(b.slot.starts_at, b.slot.minutes);
-    const place = b.slot.place ?? "";
     const ar = b.participant.language === "ar";
+    const time = (ar ? fmtSlotAr : fmtSlot)(b.slot.starts_at, b.slot.minutes);
+    const place = b.slot.place ?? "";
     const titleAr = b.study?.title_ar || b.study?.title_en || "";
     const titleEn = b.study?.title_en ?? "";
     const text = fillReminder(ar ? tpl.ar : tpl.en, {

@@ -1,7 +1,7 @@
 // The reminder wording is shared with the bot: the templates, defaults and fill rules live in
 // supabase/functions/_shared/reminders.ts and the dashboard imports that same file, so a preview fills a text exactly as the
 // bot will. What follows are the example values a preview fills it with.
-import { fmtSlot } from "./format";
+import { fmtSlot, fmtSlotAr } from "./format";
 import type { Lang } from "./types";
 
 export * from "../../supabase/functions/_shared/reminders";
@@ -80,7 +80,7 @@ export function studyValues(s: ExampleStudy, channel: string, workspace: string,
 /** The values sessionReminders fills the day-before reminder with. */
 export function sessionValues(s: ExampleStudy, slot: ExampleSlot, lang: Lang): Record<string, string> {
   const titleAr = s.title_ar || s.title_en;
-  const time = fmtSlot(slot.starts_at, slot.minutes);
+  const time = (lang === "ar" ? fmtSlotAr : fmtSlot)(slot.starts_at, slot.minutes);
   const place = slot.place ?? "";
   return {
     title: lang === "ar" ? titleAr : s.title_en,

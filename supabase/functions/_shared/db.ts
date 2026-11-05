@@ -115,13 +115,34 @@ export async function getSlots(studyId: string): Promise<SlotWithBookings[]> {
 
 const RIYADH = "Asia/Riyadh";
 const DAY = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: RIYADH });
+const DAY_AR = new Intl.DateTimeFormat("ar-u-ca-gregory-nu-latn", { weekday: "long", day: "numeric", month: "long", timeZone: RIYADH });
 const TIME = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: RIYADH });
 
-/** "Sun 2 Nov · 10:00–10:30", Riyadh time. */
-export function fmtSlot(startsAt: string, minutes: number): string {
+/** 12-hour clock in Riyadh time: "3:00" and whether it is after noon. */
+function clock(d: Date): { t: string; pm: boolean } {
+  const [h, m] = TIME.format(d).split(":").map(Number);
+  const hour = (h ?? 0) % 24;
+  return { t: `${hour % 12 || 12}:${String(m ?? 0).padStart(2, "0")}`, pm: hour >= 12 };
+}
+
+function slotRange(startsAt: string, minutes: number, am: string, pm: string): { start: Date; range: string } {
   const start = new Date(startsAt);
-  const end = new Date(start.getTime() + minutes * 60_000);
-  return `${DAY.format(start)} · ${TIME.format(start)}–${TIME.format(end)}`;
+  const s = clock(start);
+  const e = clock(new Date(start.getTime() + minutes * 60_000));
+  const range = s.pm === e.pm ? `${s.t}–${e.t} ${e.pm ? pm : am}` : `${s.t} ${s.pm ? pm : am}–${e.t} ${e.pm ? pm : am}`;
+  return { start, range };
+}
+
+/** "Sun 2 Nov · 3:00–3:30 pm", Riyadh time, 12-hour. */
+export function fmtSlot(startsAt: string, minutes: number): string {
+  const { start, range } = slotRange(startsAt, minutes, "am", "pm");
+  return `${DAY.format(start)} · ${range}`;
+}
+
+/** The same in Arabic: "الأحد، 2 نوفمبر · 3:00–3:30 م". */
+export function fmtSlotAr(startsAt: string, minutes: number): string {
+  const { start, range } = slotRange(startsAt, minutes, "ص", "م");
+  return `${DAY_AR.format(start)} · ${range}`;
 }
 
 /** Riyadh calendar parts of an instant. weekday: 0 = Sunday. */

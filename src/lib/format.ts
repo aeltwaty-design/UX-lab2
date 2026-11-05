@@ -6,8 +6,9 @@ const DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", 
 const DATE_TIME = new Intl.DateTimeFormat("en-GB", {
   day: "numeric",
   month: "short",
-  hour: "2-digit",
+  hour: "numeric",
   minute: "2-digit",
+  hour12: true,
   timeZone: RIYADH,
 });
 
@@ -22,14 +23,34 @@ export function fmtDateTime(iso: string | null | undefined): string {
 }
 
 const SLOT_DAY = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: RIYADH });
+const SLOT_DAY_AR = new Intl.DateTimeFormat("ar-u-ca-gregory-nu-latn", { weekday: "long", day: "numeric", month: "long", timeZone: RIYADH });
 const SLOT_TIME = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: RIYADH });
 
-/** "Sun 2 Nov · 10:00–10:30" in Riyadh time, the same words the bot posts. */
+/** 12-hour clock in Riyadh time: "3:00" and whether it is after noon. */
+function clock(d: Date): { t: string; pm: boolean } {
+  const [h, m] = SLOT_TIME.format(d).split(":").map(Number);
+  const hour = (h ?? 0) % 24;
+  return { t: `${hour % 12 || 12}:${String(m ?? 0).padStart(2, "0")}`, pm: hour >= 12 };
+}
+
+function slotRange(start: Date, minutes: number, am: string, pm: string): string {
+  const s = clock(start);
+  const e = clock(new Date(start.getTime() + minutes * 60_000));
+  return s.pm === e.pm ? `${s.t}–${e.t} ${e.pm ? pm : am}` : `${s.t} ${s.pm ? pm : am}–${e.t} ${e.pm ? pm : am}`;
+}
+
+/** "Sun 2 Nov · 3:00–3:30 pm" in Riyadh time, the same words the bot posts (supabase/functions/_shared/db.ts). */
 export function fmtSlot(startsAt: string, minutes: number): string {
   const start = new Date(startsAt);
   if (Number.isNaN(start.getTime())) return "—";
-  const end = new Date(start.getTime() + minutes * 60_000);
-  return `${SLOT_DAY.format(start)} · ${SLOT_TIME.format(start)}–${SLOT_TIME.format(end)}`;
+  return `${SLOT_DAY.format(start)} · ${slotRange(start, minutes, "am", "pm")}`;
+}
+
+/** The Arabic form the bot puts in Arabic DMs: "الأحد، 2 نوفمبر · 3:00–3:30 م". */
+export function fmtSlotAr(startsAt: string, minutes: number): string {
+  const start = new Date(startsAt);
+  if (Number.isNaN(start.getTime())) return "—";
+  return `${SLOT_DAY_AR.format(start)} · ${slotRange(start, minutes, "ص", "م")}`;
 }
 
 /** Riyadh is UTC+3 all year (no daylight saving). */
